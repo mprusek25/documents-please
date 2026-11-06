@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -15,33 +16,33 @@ public sealed class MainWindow : Window
     private readonly GameView _view;
     private readonly DispatcherTimer _timer;
 
-    private readonly Button _allow;
-    private readonly Button _detain;
-    private readonly Button _alarm;
-    private readonly Button _inspect;
-    private readonly Button _advance;
+    private readonly FlatButton _allow;
+    private readonly FlatButton _detain;
+    private readonly FlatButton _alarm;
+    private readonly FlatButton _inspect;
+    private readonly FlatButton _advance;
 
     public MainWindow()
     {
         Title = "Documents, Please";
         Width = 1200;
         Height = 800;
-        MinWidth = 960;
-        MinHeight = 680;
-        Background = new SolidColorBrush(Color.Parse("#0E0F12"));
+        MinWidth = 1000;
+        MinHeight = 700;
+        Background = new SolidColorBrush(Palette.BgDeep);
 
         _view = new GameView(_engine);
 
-        _allow = MakeButton("PUSTIT  [1]", "#2E7D32", () => _engine.Decide(Decision.Allow));
-        _detain = MakeButton("ZADRŽET  [2]", "#D87814", () => _engine.Decide(Decision.Detain));
-        _alarm = MakeButton("POPLACH  [3]", "#C62828", () => _engine.Decide(Decision.Alarm));
-        _inspect = MakeButton("PROHLÍDKA  [I]", "#37476E", () => _engine.Inspect());
-        _advance = MakeButton("Pokračovat  [Enter]", "#37476E", () => _engine.Advance());
+        _allow = Make("PUSTIT   [1]", Palette.Rgb(58, 104, 58), () => _engine.Decide(Decision.Allow));
+        _detain = Make("ZADRŽET   [2]", Palette.Rgb(154, 102, 34), () => _engine.Decide(Decision.Detain));
+        _alarm = Make("POPLACH   [3]", Palette.Rgb(150, 46, 40), () => _engine.Decide(Decision.Alarm));
+        _inspect = Make("PROHLÍDKA   [I]", Palette.Rgb(52, 66, 82), () => _engine.Inspect());
+        _advance = Make("POKRAČOVAT   [ENTER]", Palette.Rgb(74, 92, 60), () => _engine.Advance(), 330);
 
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 14,
+            Spacing = 12,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Children = { _allow, _detain, _alarm, _inspect, _advance }
@@ -49,8 +50,10 @@ public sealed class MainWindow : Window
 
         var bar = new Border
         {
-            Height = 80,
-            Background = new SolidColorBrush(Color.Parse("#0E0F12")),
+            Height = 78,
+            Background = new SolidColorBrush(Palette.Rgb(13, 16, 15)),
+            BorderBrush = new SolidColorBrush(Palette.Accent),
+            BorderThickness = new Thickness(0, 2, 0, 0),
             Child = buttons
         };
 
@@ -71,22 +74,10 @@ public sealed class MainWindow : Window
         UpdateButtons();
     }
 
-    private static Button MakeButton(string text, string color, Action onClick)
+    private static FlatButton Make(string text, Color color, Action onClick, double width = 180)
     {
-        var button = new Button
-        {
-            Content = text,
-            Width = 190,
-            Height = 52,
-            Background = new SolidColorBrush(Color.Parse(color)),
-            Foreground = Brushes.White,
-            FontWeight = FontWeight.Bold,
-            FontSize = 14,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Focusable = false // klávesy tak vždy zpracuje okno
-        };
-        button.Click += (_, _) => onClick();
+        var button = new FlatButton(text, color, width);
+        button.Clicked += onClick;
         return button;
     }
 
@@ -107,20 +98,19 @@ public sealed class MainWindow : Window
         _advance.IsVisible = !playing;
 
         bool inspected = _engine.InspectionLines != null;
-        _inspect.IsEnabled = playing && !inspected;
-        _inspect.Content = inspected
+        _inspect.Active = playing && !inspected;
+        _inspect.Text = inspected
             ? "PROHLÉDNUTO"
-            : $"PROHLÍDKA  [I]  (−{EconomyManager.InspectionCost})";
+            : $"PROHLÍDKA   [I]   −{EconomyManager.InspectionCost}";
 
-        _advance.Width = 340;
-        _advance.Content = _engine.State switch
+        _advance.Text = _engine.State switch
         {
-            GameState.MainMenu => "Nová hra  [Enter]",
-            GameState.ShiftIntro => "Zahájit směnu  [Enter]",
-            GameState.ShowingResult => "Další návštěvník  [Enter]",
-            GameState.ShiftSummary => "Pokračovat  [Enter]",
-            GameState.GameOver => "Nová hra  [Enter]",
-            _ => "Pokračovat  [Enter]"
+            GameState.MainMenu => "NASTOUPIT DO SLUŽBY   [ENTER]",
+            GameState.ShiftIntro => "OTEVŘÍT OKÉNKO   [ENTER]",
+            GameState.ShowingResult => "DALŠÍ NÁVŠTĚVNÍK   [ENTER]",
+            GameState.ShiftSummary => "POKRAČOVAT   [ENTER]",
+            GameState.GameOver => "NOVÁ HRA   [ENTER]",
+            _ => "POKRAČOVAT   [ENTER]"
         };
     }
 
