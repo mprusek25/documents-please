@@ -1,128 +1,109 @@
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Text;
+using System.Globalization;
+using Avalonia;
+using Avalonia.Media;
 using DocumentsPlease.Logic;
 using DocumentsPlease.Models;
 
 namespace DocumentsPlease.UI;
 
 /// <summary>
-/// Veškeré vykreslování (GDI+). Čte stav z GameEngine, sám nic neřídí.
+/// Veškeré vykreslování (Avalonia DrawingContext). Čte stav z GameEngine, sám nic neřídí.
 /// Kreslí do logického plátna 1200x720, které se rovnoměrně škáluje do okna.
 /// </summary>
-public sealed class GameRenderer : IDisposable
+public sealed class GameRenderer
 {
     public const int W = 1200;
     public const int H = 720;
 
+    private readonly record struct Fnt(Typeface Face, double Size);
+
     private static readonly Color[] SkinTones =
     {
-        Color.FromArgb(255, 224, 189), Color.FromArgb(234, 192, 134),
-        Color.FromArgb(198, 134, 66), Color.FromArgb(141, 85, 36)
+        C(255, 224, 189), C(234, 192, 134), C(198, 134, 66), C(141, 85, 36)
     };
 
     private static readonly Color[] HairColors =
     {
-        Color.FromArgb(35, 28, 24), Color.FromArgb(88, 56, 32), Color.FromArgb(206, 168, 84),
-        Color.FromArgb(158, 70, 34), Color.FromArgb(170, 170, 172)
+        C(35, 28, 24), C(88, 56, 32), C(206, 168, 84), C(158, 70, 34), C(170, 170, 172)
     };
 
     private static readonly Color[] Jackets =
     {
-        Color.FromArgb(60, 70, 110), Color.FromArgb(90, 50, 50), Color.FromArgb(50, 90, 70),
-        Color.FromArgb(80, 80, 85), Color.FromArgb(110, 90, 50), Color.FromArgb(70, 50, 90)
+        C(60, 70, 110), C(90, 50, 50), C(50, 90, 70), C(80, 80, 85), C(110, 90, 50), C(70, 50, 90)
     };
 
     private static readonly HashSet<ZombieSign> NoSigns = new();
 
-    private static readonly StringFormat Centered = new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-    private static readonly StringFormat CenterTop = new() { Alignment = StringAlignment.Center };
-    private static readonly StringFormat RightAlign = new() { Alignment = StringAlignment.Far };
+    private static readonly FontFamily UiFamily = FontFamily.Default;
+    private static readonly FontFamily MonoFamily = new("Menlo, Consolas, Courier New");
 
-    private readonly Font _title = new("Segoe UI", 46, FontStyle.Bold, GraphicsUnit.Pixel);
-    private readonly Font _big = new("Segoe UI", 30, FontStyle.Bold, GraphicsUnit.Pixel);
-    private readonly Font _h2 = new("Segoe UI", 19, FontStyle.Bold, GraphicsUnit.Pixel);
-    private readonly Font _text = new("Segoe UI", 14, FontStyle.Regular, GraphicsUnit.Pixel);
-    private readonly Font _bold = new("Segoe UI", 14, FontStyle.Bold, GraphicsUnit.Pixel);
-    private readonly Font _italic = new("Segoe UI", 13, FontStyle.Italic, GraphicsUnit.Pixel);
-    private readonly Font _small = new("Segoe UI", 12, FontStyle.Regular, GraphicsUnit.Pixel);
-    private readonly Font _smallBold = new("Segoe UI", 12, FontStyle.Bold, GraphicsUnit.Pixel);
-    private readonly Font _mono = new("Consolas", 15, FontStyle.Bold, GraphicsUnit.Pixel);
-
-    public void Dispose()
-    {
-        _title.Dispose();
-        _big.Dispose();
-        _h2.Dispose();
-        _text.Dispose();
-        _bold.Dispose();
-        _italic.Dispose();
-        _small.Dispose();
-        _smallBold.Dispose();
-        _mono.Dispose();
-    }
+    private static readonly Fnt Title = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 46);
+    private static readonly Fnt Big = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 30);
+    private static readonly Fnt H2 = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 19);
+    private static readonly Fnt Txt = new(new Typeface(UiFamily), 14);
+    private static readonly Fnt Bold = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 14);
+    private static readonly Fnt Italic = new(new Typeface(UiFamily, FontStyle.Italic), 13);
+    private static readonly Fnt Small = new(new Typeface(UiFamily), 12);
+    private static readonly Fnt SmallBold = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 12);
+    private static readonly Fnt Mono = new(new Typeface(MonoFamily, FontStyle.Normal, FontWeight.Bold), 15);
 
     // ------------------------------------------------------------------ vstupní bod
 
-    public void Render(Graphics g, Size size, GameEngine engine, float time)
+    public void Render(DrawingContext ctx, Size size, GameEngine engine, double time)
     {
-        g.Clear(Color.FromArgb(8, 9, 11));
+        ctx.DrawRectangle(Br(C(8, 9, 11)), null, new Rect(0, 0, size.Width, size.Height));
 
-        float scale = Math.Min(size.Width / (float)W, size.Height / (float)H);
-        if (scale <= 0.01f) return;
+        double scale = Math.Min(size.Width / W, size.Height / H);
+        if (scale <= 0.01) return;
 
-        g.TranslateTransform((size.Width - W * scale) / 2f, (size.Height - H * scale) / 2f);
-        g.ScaleTransform(scale, scale);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-        g.SetClip(new Rectangle(0, 0, W, H));
+        var matrix = Matrix.CreateScale(scale, scale)
+                     * Matrix.CreateTranslation((size.Width - W * scale) / 2, (size.Height - H * scale) / 2);
 
-        using (var bg = new SolidBrush(Color.FromArgb(24, 26, 31)))
-            g.FillRectangle(bg, 0, 0, W, H);
-
-        switch (engine.State)
+        using (ctx.PushTransform(matrix))
+        using (ctx.PushClip(new Rect(0, 0, W, H)))
         {
-            case GameState.MainMenu:
-                DrawMainMenu(g, time);
-                break;
-            case GameState.ShiftIntro:
-                DrawHud(g, engine);
-                DrawManual(g, engine.Directive, new Rectangle((W - 520) / 2, 70, 520, H - 90));
-                break;
-            case GameState.Inspecting:
-            case GameState.ShowingResult:
-                DrawDesk(g, engine, time);
-                break;
-            case GameState.ShiftSummary:
-                DrawHud(g, engine);
-                DrawShiftSummary(g, engine);
-                break;
-            case GameState.GameOver:
-                DrawGameOver(g, engine);
-                break;
+            Fill(ctx, C(24, 26, 31), 0, 0, W, H);
+
+            switch (engine.State)
+            {
+                case GameState.MainMenu:
+                    DrawMainMenu(ctx, time);
+                    break;
+                case GameState.ShiftIntro:
+                    DrawHud(ctx, engine);
+                    DrawManual(ctx, engine.Directive, new Rect((W - 520) / 2, 70, 520, H - 90));
+                    break;
+                case GameState.Inspecting:
+                case GameState.ShowingResult:
+                    DrawDesk(ctx, engine, time);
+                    break;
+                case GameState.ShiftSummary:
+                    DrawHud(ctx, engine);
+                    DrawShiftSummary(ctx, engine);
+                    break;
+                case GameState.GameOver:
+                    DrawGameOver(ctx, engine);
+                    break;
+            }
         }
     }
 
     // ------------------------------------------------------------------ obrazovky
 
-    private void DrawMainMenu(Graphics g, float time)
+    private void DrawMainMenu(DrawingContext ctx, double time)
     {
-        float gate = MathF.Sin(time * 17f) * MathF.Sin(time * 5.3f);
-        int alpha = gate > 0.92f ? 140 : 255;
+        double gate = Math.Sin(time * 17) * Math.Sin(time * 5.3);
+        byte alpha = gate > 0.92 ? (byte)140 : (byte)255;
 
-        using (var titleBrush = new SolidBrush(Color.FromArgb(alpha, 230, 70, 60)))
-            g.DrawString("DOCUMENTS, PLEASE", _title, titleBrush, new RectangleF(0, 60, W, 60), CenterTop);
+        Text(ctx, "DOCUMENTS, PLEASE", Title, Br(C(230, 70, 60, alpha)), 0, 60, W, TextAlignment.Center);
+        Text(ctx, "Hraniční kontrola. Papíry. Zombie.", H2, Brushes.Gainsboro, 0, 128, W, TextAlignment.Center);
 
-        g.DrawString("Hraniční kontrola. Papíry. Zombie.", _h2, Brushes.Gainsboro, new RectangleF(0, 128, W, 30), CenterTop);
+        var panel = new Rect(230, 190, 740, 440);
+        Fill(ctx, C(34, 37, 46), panel);
+        Frame(ctx, C(80, 90, 110), 2, panel);
 
-        var panel = new Rectangle(230, 190, 740, 440);
-        using (var fill = new SolidBrush(Color.FromArgb(34, 37, 46)))
-            g.FillRectangle(fill, panel);
-        using (var border = new Pen(Color.FromArgb(80, 90, 110), 2))
-            g.DrawRectangle(border, panel);
-
-        float x = panel.X + 24, w = panel.Width - 48, y = panel.Y + 18;
-        g.DrawString("JAK HRÁT", _h2, Brushes.White, x, y);
+        double x = panel.X + 24, w = panel.Width - 48, y = panel.Y + 18;
+        Text(ctx, "JAK HRÁT", H2, Brushes.White, x, y);
         y += 34;
 
         string[] lines =
@@ -134,10 +115,10 @@ public sealed class GameRenderer : IDisposable
         };
 
         foreach (var line in lines)
-            y = Paragraph(g, line, _text, Brushes.Gainsboro, x, y, w) + 10;
+            y = Paragraph(ctx, line, Txt, Brushes.Gainsboro, x, y, w) + 10;
 
         y += 6;
-        g.DrawString("SAZEBNÍK", _bold, Brushes.White, x, y);
+        Text(ctx, "SAZEBNÍK", Bold, Brushes.White, x, y);
         y += 24;
 
         string[] tariffs =
@@ -150,456 +131,422 @@ public sealed class GameRenderer : IDisposable
 
         foreach (var line in tariffs)
         {
-            g.DrawString(line, _text, Brushes.Khaki, x, y);
+            Text(ctx, line, Txt, Brushes.Khaki, x, y);
             y += 22;
         }
 
-        g.DrawString("Stiskni ENTER nebo klikni na tlačítko dole.", _text, Brushes.Gray,
-            new RectangleF(panel.X, panel.Bottom - 34, panel.Width, 24), CenterTop);
+        Text(ctx, "Stiskni ENTER nebo klikni na tlačítko dole.", Txt, Brushes.Gray,
+            panel.X, panel.Bottom - 34, panel.Width, TextAlignment.Center);
     }
 
-    private void DrawHud(Graphics g, GameEngine e)
+    private void DrawHud(DrawingContext ctx, GameEngine e)
     {
-        using (var bar = new SolidBrush(Color.FromArgb(14, 15, 18)))
-            g.FillRectangle(bar, 0, 0, W, 54);
+        Fill(ctx, C(14, 15, 18), 0, 0, W, 54);
 
         int credits = e.Stats.Credits;
-        g.DrawString($"KREDITY  {credits}", _h2, credits >= 0 ? Brushes.LimeGreen : Brushes.OrangeRed, 18, 14);
+        Text(ctx, $"KREDITY  {credits}", H2, credits >= 0 ? Brushes.LimeGreen : Brushes.OrangeRed, 18, 14);
 
-        g.DrawString("VAROVÁNÍ", _bold, Brushes.Gainsboro, 270, 17);
+        Text(ctx, "VAROVÁNÍ", Bold, Brushes.Gainsboro, 270, 17);
         for (int i = 0; i < PlayerStats.MaxWarnings; i++)
         {
-            var circle = new RectangleF(360 + i * 26, 16, 18, 18);
-            if (i < e.Stats.Warnings) g.FillEllipse(Brushes.OrangeRed, circle);
-            else g.DrawEllipse(Pens.Gray, circle);
+            double cx = 369 + i * 26;
+            if (i < e.Stats.Warnings)
+                ctx.DrawEllipse(Brushes.OrangeRed, null, new Point(cx, 25), 9, 9);
+            else
+                ctx.DrawEllipse(null, new Pen(Brushes.Gray, 1.5), new Point(cx, 25), 9, 9);
         }
 
-        g.DrawString($"DEN {e.Stats.Day}  •  {e.Directive.Date:dd.MM.yyyy}", _h2, Brushes.White, 520, 14);
+        Text(ctx, $"DEN {e.Stats.Day}  •  {e.Directive.Date:dd.MM.yyyy}", H2, Brushes.White, 520, 14);
 
-        g.DrawString($"Návštěvník {e.VisitorNumber} / {e.VisitorsTotal}", _bold, Brushes.Gainsboro,
-            new RectangleF(W - 260, 17, 242, 24), RightAlign);
+        Text(ctx, $"Návštěvník {e.VisitorNumber} / {e.VisitorsTotal}", Bold, Brushes.Gainsboro,
+            W - 260, 17, 242, TextAlignment.Right);
     }
 
-    private void DrawDesk(Graphics g, GameEngine e, float time)
+    private void DrawDesk(DrawingContext ctx, GameEngine e, double time)
     {
-        DrawHud(g, e);
+        DrawHud(ctx, e);
 
         var v = e.CurrentVisitor;
         if (v == null) return;
 
-        var booth = new Rectangle(10, 64, 360, H - 74);
-        DrawBooth(g, booth, v, time);
+        var booth = new Rect(10, 64, 360, H - 74);
+        DrawBooth(ctx, booth, v, time);
 
-        DrawPassport(g, v.Passport, new Rectangle(384, 70, 350, 210));
-        DrawPermit(g, v.Permit, new Rectangle(384, 292, 350, 250));
-        DrawInspection(g, e, new Rectangle(384, 554, 350, H - 564));
-        DrawManual(g, e.Directive, new Rectangle(748, 64, W - 758, H - 74));
+        DrawPassport(ctx, v.Passport, new Rect(384, 70, 350, 210));
+        DrawPermit(ctx, v.Permit, new Rect(384, 292, 350, 250));
+        DrawInspection(ctx, e, new Rect(384, 554, 350, H - 564));
+        DrawManual(ctx, e.Directive, new Rect(748, 64, W - 758, H - 74));
 
         if (e.State == GameState.ShowingResult && e.LastResult != null)
-            DrawResultCard(g, e, booth);
+            DrawResultCard(ctx, e, booth);
     }
 
-    private void DrawShiftSummary(Graphics g, GameEngine e)
+    private void DrawShiftSummary(DrawingContext ctx, GameEngine e)
     {
         var report = e.LastShiftReport;
         if (report == null) return;
 
-        var panel = new Rectangle(300, 90, 600, 560);
-        using (var fill = new SolidBrush(Color.FromArgb(34, 37, 46)))
-            g.FillRectangle(fill, panel);
-        using (var border = new Pen(Color.FromArgb(80, 90, 110), 2))
-            g.DrawRectangle(border, panel);
+        var panel = new Rect(300, 90, 600, 560);
+        Fill(ctx, C(34, 37, 46), panel);
+        Frame(ctx, C(80, 90, 110), 2, panel);
 
-        float x = panel.X + 30, w = panel.Width - 60, y = panel.Y + 24;
-        g.DrawString($"KONEC SMĚNY – DEN {report.Day}", _big, Brushes.White, x, y);
+        double x = panel.X + 30, w = panel.Width - 60, y = panel.Y + 24;
+        Text(ctx, $"KONEC SMĚNY – DEN {report.Day}", Big, Brushes.White, x, y);
         y += 62;
 
-        y = Row(g, "Obslouženo návštěvníků", report.Processed.ToString(), Brushes.White, x, y, w);
-        y = Row(g, "Správných rozhodnutí", report.Correct.ToString(), Brushes.LimeGreen, x, y, w);
-        y = Row(g, "Chybných rozhodnutí", report.Wrong.ToString(), report.Wrong > 0 ? Brushes.OrangeRed : Brushes.White, x, y, w);
+        y = Row(ctx, "Obslouženo návštěvníků", report.Processed.ToString(), Brushes.White, x, y, w);
+        y = Row(ctx, "Správných rozhodnutí", report.Correct.ToString(), Brushes.LimeGreen, x, y, w);
+        y = Row(ctx, "Chybných rozhodnutí", report.Wrong.ToString(), report.Wrong > 0 ? Brushes.OrangeRed : Brushes.White, x, y, w);
         y += 14;
-        y = Row(g, "Příjem a pokuty z rozhodnutí", Signed(report.DecisionCredits), report.DecisionCredits >= 0 ? Brushes.LimeGreen : Brushes.OrangeRed, x, y, w);
-        y = Row(g, "Prohlídky", Signed(report.InspectionCredits), Brushes.Gainsboro, x, y, w);
-        y = Row(g, "Nájem a živobytí", Signed(report.UpkeepCredits), Brushes.OrangeRed, x, y, w);
-        y += 14;
-
-        using (var sep = new Pen(Color.FromArgb(80, 90, 110), 1.5f))
-            g.DrawLine(sep, x, y, x + w, y);
+        y = Row(ctx, "Příjem a pokuty z rozhodnutí", Signed(report.DecisionCredits), report.DecisionCredits >= 0 ? Brushes.LimeGreen : Brushes.OrangeRed, x, y, w);
+        y = Row(ctx, "Prohlídky", Signed(report.InspectionCredits), Brushes.Gainsboro, x, y, w);
+        y = Row(ctx, "Nájem a živobytí", Signed(report.UpkeepCredits), Brushes.OrangeRed, x, y, w);
         y += 14;
 
-        g.DrawString("ZŮSTATEK", _h2, Brushes.White, x, y);
-        g.DrawString($"{report.EndingCredits} kr.", _big,
-            report.EndingCredits >= 0 ? Brushes.LimeGreen : Brushes.OrangeRed,
-            new RectangleF(x, y - 8, w, 40), RightAlign);
+        Line(ctx, C(80, 90, 110), 1.5, x, y, x + w, y);
+        y += 14;
+
+        Text(ctx, "ZŮSTATEK", H2, Brushes.White, x, y);
+        Text(ctx, $"{report.EndingCredits} kr.", Big,
+            report.EndingCredits >= 0 ? Brushes.LimeGreen : Brushes.OrangeRed, x, y - 8, w, TextAlignment.Right);
         y += 56;
 
         if (report.GameOver)
-            Paragraph(g, e.GameOverReason, _bold, Brushes.OrangeRed, x, y, w);
+            Paragraph(ctx, e.GameOverReason, Bold, Brushes.OrangeRed, x, y, w);
         else
-            Paragraph(g, "Zítra tě čeká další směna a nová direktiva. Odpočiň si – zombie ne.", _text, Brushes.Gainsboro, x, y, w);
+            Paragraph(ctx, "Zítra tě čeká další směna a nová direktiva. Odpočiň si – zombie ne.", Txt, Brushes.Gainsboro, x, y, w);
     }
 
-    private void DrawGameOver(Graphics g, GameEngine e)
+    private void DrawGameOver(DrawingContext ctx, GameEngine e)
     {
-        g.DrawString("KONEC HRY", _title, Brushes.OrangeRed, new RectangleF(0, 110, W, 60), CenterTop);
+        Text(ctx, "KONEC HRY", Title, Brushes.OrangeRed, 0, 110, W, TextAlignment.Center);
 
-        var panel = new Rectangle(300, 210, 600, 360);
-        using (var fill = new SolidBrush(Color.FromArgb(34, 37, 46)))
-            g.FillRectangle(fill, panel);
-        using (var border = new Pen(Color.FromArgb(120, 50, 50), 2))
-            g.DrawRectangle(border, panel);
+        var panel = new Rect(300, 210, 600, 360);
+        Fill(ctx, C(34, 37, 46), panel);
+        Frame(ctx, C(120, 50, 50), 2, panel);
 
-        float x = panel.X + 30, w = panel.Width - 60, y = panel.Y + 26;
-        y = Paragraph(g, e.GameOverReason, _h2, Brushes.White, x, y, w) + 24;
+        double x = panel.X + 30, w = panel.Width - 60, y = panel.Y + 26;
+        y = Paragraph(ctx, e.GameOverReason, H2, Brushes.White, x, y, w) + 24;
 
-        y = Row(g, "Odsloužených směn", Math.Max(0, e.Stats.Day - (e.LastShiftReport is { GameOver: true } ? 0 : 1)).ToString(), Brushes.White, x, y, w);
-        y = Row(g, "Správných rozhodnutí", e.Stats.TotalCorrect.ToString(), Brushes.LimeGreen, x, y, w);
-        y = Row(g, "Chybných rozhodnutí", e.Stats.TotalWrong.ToString(), Brushes.OrangeRed, x, y, w);
-        y = Row(g, "Zastavených zombie", e.Stats.ZombiesStopped.ToString(), Brushes.LimeGreen, x, y, w);
-        y = Row(g, "Vpuštěných zombie", e.Stats.ZombiesLetIn.ToString(), Brushes.OrangeRed, x, y, w);
+        int shifts = Math.Max(0, e.Stats.Day - (e.LastShiftReport is { GameOver: true } ? 0 : 1));
+        y = Row(ctx, "Odsloužených směn", shifts.ToString(), Brushes.White, x, y, w);
+        y = Row(ctx, "Správných rozhodnutí", e.Stats.TotalCorrect.ToString(), Brushes.LimeGreen, x, y, w);
+        y = Row(ctx, "Chybných rozhodnutí", e.Stats.TotalWrong.ToString(), Brushes.OrangeRed, x, y, w);
+        y = Row(ctx, "Zastavených zombie", e.Stats.ZombiesStopped.ToString(), Brushes.LimeGreen, x, y, w);
+        Row(ctx, "Vpuštěných zombie", e.Stats.ZombiesLetIn.ToString(), Brushes.OrangeRed, x, y, w);
 
-        g.DrawString("Stiskni ENTER pro novou hru.", _text, Brushes.Gray,
-            new RectangleF(panel.X, panel.Bottom - 40, panel.Width, 24), CenterTop);
+        Text(ctx, "Stiskni ENTER pro novou hru.", Txt, Brushes.Gray,
+            panel.X, panel.Bottom - 40, panel.Width, TextAlignment.Center);
     }
 
     // ------------------------------------------------------------------ okénko a návštěvník
 
-    private void DrawBooth(Graphics g, Rectangle r, Visitor v, float time)
+    private void DrawBooth(DrawingContext ctx, Rect r, Visitor v, double time)
     {
-        using (var bg = new LinearGradientBrush(r, Color.FromArgb(44, 48, 64), Color.FromArgb(18, 20, 28), 90f))
-            g.FillRectangle(bg, r);
-
-        // zeď za návštěvníkem
-        using (var stripe = new Pen(Color.FromArgb(24, 255, 255, 255), 1))
+        var gradient = new LinearGradientBrush
         {
-            for (int x = r.X + 30; x < r.Right; x += 60)
-                g.DrawLine(stripe, x, r.Y, x, r.Bottom);
-        }
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(C(44, 48, 64), 0),
+                new GradientStop(C(18, 20, 28), 1)
+            }
+        };
+        ctx.DrawRectangle(gradient, null, r);
 
-        var person = new RectangleF(r.X + (r.Width - 300) / 2f, 260, 300, 390);
-        DrawPerson(g, person, v.Face, v.ZombieSigns, v.JacketColor, time, true);
+        for (double x = r.X + 30; x < r.Right; x += 60)
+            Line(ctx, C(255, 255, 255, 24), 1, x, r.Y, x, r.Bottom);
+
+        var person = new Rect(r.X + (r.Width - 300) / 2, 260, 300, 390);
+        DrawPerson(ctx, person, v.Face, v.ZombieSigns, v.JacketColor, time, true);
 
         // pult
-        var counter = new Rectangle(r.X, r.Bottom - 70, r.Width, 70);
-        using (var wood = new SolidBrush(Color.FromArgb(62, 46, 36)))
-            g.FillRectangle(wood, counter);
-        using (var edge = new Pen(Color.FromArgb(96, 72, 54), 3))
-            g.DrawLine(edge, counter.X, counter.Y, counter.Right, counter.Y);
-        g.DrawString("OKÉNKO č. 3  –  KARANTÉNNÍ ZÓNA 7", _smallBold, Brushes.Tan,
-            new RectangleF(counter.X, counter.Y + 24, counter.Width, 20), CenterTop);
+        var counter = new Rect(r.X, r.Bottom - 70, r.Width, 70);
+        Fill(ctx, C(62, 46, 36), counter);
+        Line(ctx, C(96, 72, 54), 3, counter.X, counter.Y, counter.Right, counter.Y);
+        Text(ctx, "OKÉNKO č. 3  –  KARANTÉNNÍ ZÓNA 7", SmallBold, Brushes.Tan,
+            counter.X, counter.Y + 24, counter.Width, TextAlignment.Center);
 
-        using (var frame = new Pen(Color.FromArgb(70, 76, 96), 3))
-            g.DrawRectangle(frame, r);
+        Frame(ctx, C(70, 76, 96), 3, r);
 
-        DrawSpeech(g, new RectangleF(r.X + 16, r.Y + 14, r.Width - 32, 100), v.Greeting);
+        DrawSpeech(ctx, new Rect(r.X + 16, r.Y + 14, r.Width - 32, 100), v.Greeting);
     }
 
-    private void DrawSpeech(Graphics g, RectangleF r, string text)
+    private void DrawSpeech(DrawingContext ctx, Rect r, string text)
     {
-        using var path = RoundedRect(r, 12);
-        using var fill = new SolidBrush(Color.FromArgb(240, 240, 232));
-        g.FillPath(fill, path);
-        using (var pen = new Pen(Color.FromArgb(90, 90, 90), 2))
-            g.DrawPath(pen, path);
+        var fill = Br(C(240, 240, 232));
+        ctx.DrawRectangle(fill, new Pen(Br(C(90, 90, 90)), 2), r, 12, 12);
 
-        var tail = new[]
-        {
-            new PointF(r.X + 150, r.Bottom - 1),
-            new PointF(r.X + 182, r.Bottom - 1),
-            new PointF(r.X + 166, r.Bottom + 20)
-        };
-        g.FillPolygon(fill, tail);
+        Poly(ctx, fill, null,
+            new Point(r.X + 150, r.Bottom - 1),
+            new Point(r.X + 182, r.Bottom - 1),
+            new Point(r.X + 166, r.Bottom + 20));
 
-        g.DrawString(text, _text, Brushes.Black, new RectangleF(r.X + 12, r.Y + 10, r.Width - 24, r.Height - 20));
+        Text(ctx, text, Txt, Brushes.Black, r.X + 12, r.Y + 10, r.Width - 24);
     }
 
     /// <summary>
     /// Nakreslí postavu v souřadnicích 200x260 škálovaných do rect.
     /// Příznaky zombie (signs) mění vzhled a animaci – fotka v OP je kreslí s prázdnou množinou.
     /// </summary>
-    private void DrawPerson(Graphics g, RectangleF rect, FaceTraits face, ISet<ZombieSign> signs, int jacket, float time, bool animate)
+    private void DrawPerson(DrawingContext ctx, Rect rect, FaceTraits face, ISet<ZombieSign> signs, int jacket, double time, bool animate)
     {
-        var saved = g.Save();
-        g.SetClip(rect, CombineMode.Intersect);
-        g.TranslateTransform(rect.X, rect.Y);
-        g.ScaleTransform(rect.Width / 200f, rect.Height / 260f);
+        var matrix = Matrix.CreateScale(rect.Width / 200.0, rect.Height / 260.0)
+                     * Matrix.CreateTranslation(rect.X, rect.Y);
 
-        float dx = 0f;
-        float dy = animate ? MathF.Sin(time * 1.8f) * 1.5f : 0f;
-
-        if (animate && signs.Contains(ZombieSign.Twitching))
+        using (ctx.PushTransform(matrix))
+        using (ctx.PushClip(new Rect(0, 0, 200, 260)))
         {
-            float gate = MathF.Sin(time * 11f) * MathF.Sin(time * 3.7f);
-            if (gate > 0.55f)
+            double dx = 0;
+            double dy = animate ? Math.Sin(time * 1.8) * 1.5 : 0;
+
+            if (animate && signs.Contains(ZombieSign.Twitching))
             {
-                dx = MathF.Sin(time * 97f) * 3.5f;
-                dy += MathF.Cos(time * 83f) * 2.5f;
-            }
-        }
-
-        Color skin = SkinTones[face.SkinTone % SkinTones.Length];
-        if (signs.Contains(ZombieSign.Pallor))
-            skin = Blend(skin, Color.FromArgb(148, 176, 150), 0.72f);
-
-        Color hair = HairColors[face.HairColor % HairColors.Length];
-
-        using var skinB = new SolidBrush(skin);
-        using var hairB = new SolidBrush(hair);
-        using var jacketB = new SolidBrush(Jackets[jacket % Jackets.Length]);
-
-        // tělo a límec
-        g.FillEllipse(jacketB, 8f, 182f, 184f, 170f);
-        g.FillPolygon(Brushes.WhiteSmoke, new[] { new PointF(86, 178), new PointF(114, 178), new PointF(100, 212) });
-
-        // vlasy dlouhé – za hlavou
-        if (face.Hair == HairStyle.Long)
-            g.FillEllipse(hairB, 42 + dx, 40 + dy, 116, 150);
-
-        // krk, uši, hlava
-        g.FillRectangle(skinB, 84f + dx * 0.4f, 146f, 32f, 44f);
-        g.FillEllipse(skinB, 45 + dx, 96 + dy, 14, 26);
-        g.FillEllipse(skinB, 141 + dx, 96 + dy, 14, 26);
-        g.FillEllipse(skinB, 52 + dx, 38 + dy, 96, 124);
-
-        // vlasy – přední část
-        switch (face.Hair)
-        {
-            case HairStyle.Short:
-            case HairStyle.Long:
-                g.FillPie(hairB, 50 + dx, 30 + dy, 100, 90, 180, 180);
-                break;
-            case HairStyle.Curly:
-                for (int i = 0; i < 7; i++)
+                double gate = Math.Sin(time * 11) * Math.Sin(time * 3.7);
+                if (gate > 0.55)
                 {
-                    float a = MathF.PI * (1f + i / 6f);
-                    g.FillEllipse(hairB, 100 + dx + MathF.Cos(a) * 46 - 13, 76 + dy + MathF.Sin(a) * 44 - 13, 26, 26);
+                    dx = Math.Sin(time * 97) * 3.5;
+                    dy += Math.Cos(time * 83) * 2.5;
                 }
-                break;
-        }
-
-        // oči
-        bool milky = signs.Contains(ZombieSign.MilkyEyes);
-        Color white = milky ? Color.FromArgb(205, 210, 205) : Color.White;
-        using (var whiteB = new SolidBrush(white))
-        {
-            g.FillEllipse(whiteB, 72 + dx, 90 + dy, 22, 14);
-            g.FillEllipse(whiteB, 106 + dx, 90 + dy, 22, 14);
-        }
-
-        if (milky)
-        {
-            using var pale = new SolidBrush(Color.FromArgb(228, 232, 236));
-            g.FillEllipse(pale, 78 + dx, 91 + dy, 10, 12);
-            g.FillEllipse(pale, 112 + dx, 91 + dy, 10, 12);
-        }
-        else
-        {
-            using var iris = new SolidBrush(Color.FromArgb(52, 72, 104));
-            g.FillEllipse(iris, 78 + dx, 91 + dy, 10, 12);
-            g.FillEllipse(iris, 112 + dx, 91 + dy, 10, 12);
-            g.FillEllipse(Brushes.Black, 81 + dx, 94 + dy, 4, 6);
-            g.FillEllipse(Brushes.Black, 115 + dx, 94 + dy, 4, 6);
-        }
-
-        if (signs.Contains(ZombieSign.Pallor))
-        {
-            using var bags = new SolidBrush(Color.FromArgb(95, 70, 40, 90));
-            g.FillEllipse(bags, 70 + dx, 101 + dy, 26, 9);
-            g.FillEllipse(bags, 104 + dx, 101 + dy, 26, 9);
-        }
-
-        // obočí a nos
-        using (var browPen = new Pen(hair, 3f))
-        {
-            g.DrawLine(browPen, 70 + dx, 84 + dy, 94 + dx, 82 + dy);
-            g.DrawLine(browPen, 106 + dx, 82 + dy, 130 + dx, 84 + dy);
-        }
-
-        using (var nosePen = new Pen(Blend(skin, Color.Black, 0.28f), 2f))
-        {
-            g.DrawLine(nosePen, 100 + dx, 100 + dy, 96 + dx, 120 + dy);
-            g.DrawLine(nosePen, 96 + dx, 120 + dy, 104 + dx, 121 + dy);
-        }
-
-        // vousy, ústa
-        if (face.Beard)
-        {
-            g.FillPie(hairB, 54 + dx, 78 + dy, 92, 88, 0, 180);
-            g.FillEllipse(skinB, 87 + dx, 125 + dy, 26, 16);
-        }
-
-        if (signs.Contains(ZombieSign.Groaning))
-        {
-            using var dark = new SolidBrush(Color.FromArgb(70, 20, 25));
-            g.FillEllipse(dark, 88 + dx, 126 + dy, 24, 20);
-        }
-        else
-        {
-            using var mouthPen = new Pen(Blend(skin, Color.Black, 0.55f), 2.5f);
-            g.DrawLine(mouthPen, 88 + dx, 135 + dy, 112 + dx, 135 + dy);
-        }
-
-        // brýle
-        if (face.Glasses)
-        {
-            using var glassPen = new Pen(Color.FromArgb(40, 40, 46), 2.5f);
-            g.DrawEllipse(glassPen, 66 + dx, 86 + dy, 32, 24);
-            g.DrawEllipse(glassPen, 102 + dx, 86 + dy, 32, 24);
-            g.DrawLine(glassPen, 98 + dx, 96 + dy, 102 + dx, 96 + dy);
-        }
-
-        // jizvy se stehy
-        if (signs.Contains(ZombieSign.Scars))
-        {
-            using var scar = new Pen(Color.FromArgb(150, 40, 40), 3f);
-            using var stitch = new Pen(Color.FromArgb(40, 20, 20), 1.5f);
-
-            g.DrawLine(scar, 62 + dx, 54 + dy, 90 + dx, 116 + dy);
-            for (int i = 0; i < 5; i++)
-            {
-                float t = i / 4f;
-                float sx = 62 + 28 * t + dx;
-                float sy = 54 + 62 * t + dy;
-                g.DrawLine(stitch, sx - 4, sy + 3, sx + 4, sy - 3);
             }
 
-            g.DrawLine(scar, 124 + dx, 112 + dy, 138 + dx, 148 + dy);
-            for (int i = 0; i < 3; i++)
+            Color skin = SkinTones[face.SkinTone % SkinTones.Length];
+            if (signs.Contains(ZombieSign.Pallor))
+                skin = Blend(skin, C(148, 176, 150), 0.72);
+
+            Color hair = HairColors[face.HairColor % HairColors.Length];
+
+            var skinB = Br(skin);
+            var hairB = Br(hair);
+            var jacketB = Br(Jackets[jacket % Jackets.Length]);
+
+            // tělo a límec
+            Ell(ctx, jacketB, null, 8, 182, 184, 170);
+            Poly(ctx, Brushes.WhiteSmoke, null, new Point(86, 178), new Point(114, 178), new Point(100, 212));
+
+            // dlouhé vlasy – za hlavou
+            if (face.Hair == HairStyle.Long)
+                Ell(ctx, hairB, null, 42 + dx, 40 + dy, 116, 150);
+
+            // krk, uši, hlava
+            Fill(ctx, skin, 84 + dx * 0.4, 146, 32, 44);
+            Ell(ctx, skinB, null, 45 + dx, 96 + dy, 14, 26);
+            Ell(ctx, skinB, null, 141 + dx, 96 + dy, 14, 26);
+            Ell(ctx, skinB, null, 52 + dx, 38 + dy, 96, 124);
+
+            // vlasy – přední část
+            switch (face.Hair)
             {
-                float t = i / 2f;
-                float sx = 124 + 14 * t + dx;
-                float sy = 112 + 36 * t + dy;
-                g.DrawLine(stitch, sx - 4, sy + 2, sx + 4, sy - 2);
+                case HairStyle.Short:
+                case HairStyle.Long:
+                    Pie(ctx, hairB, 50 + dx, 30 + dy, 100, 90, 180, 180);
+                    break;
+                case HairStyle.Curly:
+                    for (int i = 0; i < 7; i++)
+                    {
+                        double a = Math.PI * (1.0 + i / 6.0);
+                        Ell(ctx, hairB, null,
+                            100 + dx + Math.Cos(a) * 46 - 13,
+                            76 + dy + Math.Sin(a) * 44 - 13, 26, 26);
+                    }
+                    break;
+            }
+
+            // oči
+            bool milky = signs.Contains(ZombieSign.MilkyEyes);
+            var whiteB = Br(milky ? C(205, 210, 205) : C(255, 255, 255));
+            Ell(ctx, whiteB, null, 72 + dx, 90 + dy, 22, 14);
+            Ell(ctx, whiteB, null, 106 + dx, 90 + dy, 22, 14);
+
+            if (milky)
+            {
+                var pale = Br(C(228, 232, 236));
+                Ell(ctx, pale, null, 78 + dx, 91 + dy, 10, 12);
+                Ell(ctx, pale, null, 112 + dx, 91 + dy, 10, 12);
+            }
+            else
+            {
+                var iris = Br(C(52, 72, 104));
+                Ell(ctx, iris, null, 78 + dx, 91 + dy, 10, 12);
+                Ell(ctx, iris, null, 112 + dx, 91 + dy, 10, 12);
+                Ell(ctx, Brushes.Black, null, 81 + dx, 94 + dy, 4, 6);
+                Ell(ctx, Brushes.Black, null, 115 + dx, 94 + dy, 4, 6);
+            }
+
+            if (signs.Contains(ZombieSign.Pallor))
+            {
+                var bags = Br(C(70, 40, 90, 95));
+                Ell(ctx, bags, null, 70 + dx, 101 + dy, 26, 9);
+                Ell(ctx, bags, null, 104 + dx, 101 + dy, 26, 9);
+            }
+
+            // obočí a nos
+            Line(ctx, hair, 3, 70 + dx, 84 + dy, 94 + dx, 82 + dy);
+            Line(ctx, hair, 3, 106 + dx, 82 + dy, 130 + dx, 84 + dy);
+
+            Color noseColor = Blend(skin, Colors.Black, 0.28);
+            Line(ctx, noseColor, 2, 100 + dx, 100 + dy, 96 + dx, 120 + dy);
+            Line(ctx, noseColor, 2, 96 + dx, 120 + dy, 104 + dx, 121 + dy);
+
+            // vousy, ústa
+            if (face.Beard)
+            {
+                Pie(ctx, hairB, 54 + dx, 78 + dy, 92, 88, 0, 180);
+                Ell(ctx, skinB, null, 87 + dx, 125 + dy, 26, 16);
+            }
+
+            if (signs.Contains(ZombieSign.Groaning))
+                Ell(ctx, Br(C(70, 20, 25)), null, 88 + dx, 126 + dy, 24, 20);
+            else
+                Line(ctx, Blend(skin, Colors.Black, 0.55), 2.5, 88 + dx, 135 + dy, 112 + dx, 135 + dy);
+
+            // brýle
+            if (face.Glasses)
+            {
+                var glassPen = new Pen(Br(C(40, 40, 46)), 2.5);
+                Ell(ctx, null, glassPen, 66 + dx, 86 + dy, 32, 24);
+                Ell(ctx, null, glassPen, 102 + dx, 86 + dy, 32, 24);
+                ctx.DrawLine(glassPen, new Point(98 + dx, 96 + dy), new Point(102 + dx, 96 + dy));
+            }
+
+            // jizvy se stehy
+            if (signs.Contains(ZombieSign.Scars))
+            {
+                var scar = C(150, 40, 40);
+                var stitch = C(40, 20, 20);
+
+                Line(ctx, scar, 3, 62 + dx, 54 + dy, 90 + dx, 116 + dy);
+                for (int i = 0; i < 5; i++)
+                {
+                    double t = i / 4.0;
+                    double sx = 62 + 28 * t + dx;
+                    double sy = 54 + 62 * t + dy;
+                    Line(ctx, stitch, 1.5, sx - 4, sy + 3, sx + 4, sy - 3);
+                }
+
+                Line(ctx, scar, 3, 124 + dx, 112 + dy, 138 + dx, 148 + dy);
+                for (int i = 0; i < 3; i++)
+                {
+                    double t = i / 2.0;
+                    double sx = 124 + 14 * t + dx;
+                    double sy = 112 + 36 * t + dy;
+                    Line(ctx, stitch, 1.5, sx - 4, sy + 2, sx + 4, sy - 2);
+                }
+            }
+
+            // slintání
+            if (signs.Contains(ZombieSign.Drooling))
+            {
+                double len = 14 + (animate ? (Math.Sin(time * 1.5) + 1) * 7 : 0);
+                var drool = C(190, 225, 232, 210);
+                Line(ctx, drool, 3, 106 + dx, 140 + dy, 108 + dx, 140 + len + dy);
+                Ell(ctx, Br(drool), null, 104 + dx, 138 + len + dy, 8, 8);
             }
         }
-
-        // slintání
-        if (signs.Contains(ZombieSign.Drooling))
-        {
-            float len = 14f + (animate ? (MathF.Sin(time * 1.5f) + 1f) * 7f : 0f);
-            using var dropPen = new Pen(Color.FromArgb(210, 190, 225, 232), 3f);
-            using var dropB = new SolidBrush(Color.FromArgb(210, 190, 225, 232));
-            g.DrawLine(dropPen, 106 + dx, 140 + dy, 108 + dx, 140 + len + dy);
-            g.FillEllipse(dropB, 104 + dx, 138 + len + dy, 8, 8);
-        }
-
-        g.Restore(saved);
     }
 
-    private void DrawPhoto(Graphics g, FaceTraits face, Rectangle r)
+    private void DrawPhoto(DrawingContext ctx, FaceTraits face, Rect r)
     {
-        using (var bg = new SolidBrush(Color.FromArgb(170, 200, 225)))
-            g.FillRectangle(bg, r);
-
-        DrawPerson(g, r, face, NoSigns, 0, 0f, false);
-
-        using var pen = new Pen(Color.FromArgb(70, 90, 120), 2);
-        g.DrawRectangle(pen, r);
+        Fill(ctx, C(170, 200, 225), r);
+        DrawPerson(ctx, r, face, NoSigns, 0, 0, false);
+        Frame(ctx, C(70, 90, 120), 2, r);
     }
 
     // ------------------------------------------------------------------ doklady a manuál
 
-    private void DrawPassport(Graphics g, PassportDocument d, Rectangle r)
+    private void DrawPassport(DrawingContext ctx, PassportDocument d, Rect r)
     {
-        DrawPaper(g, r, Color.FromArgb(214, 226, 240), Color.FromArgb(60, 90, 140));
+        DrawPaper(ctx, r, C(214, 226, 240), C(60, 90, 140));
 
-        using (var header = new SolidBrush(Color.FromArgb(60, 90, 140)))
-            g.FillRectangle(header, r.X, r.Y, r.Width, 28);
-        g.DrawString("OBČANSKÝ PRŮKAZ", _bold, Brushes.White, r.X + 10, r.Y + 6);
-        g.DrawString("KARANTÉNNÍ ZÓNA 7", _smallBold, Brushes.White, new RectangleF(r.X, r.Y + 8, r.Width - 10, 20), RightAlign);
+        Fill(ctx, C(60, 90, 140), r.X, r.Y, r.Width, 28);
+        Text(ctx, "OBČANSKÝ PRŮKAZ", Bold, Brushes.White, r.X + 10, r.Y + 6);
+        Text(ctx, "KARANTÉNNÍ ZÓNA 7", SmallBold, Brushes.White, r.X, r.Y + 8, r.Width - 10, TextAlignment.Right);
 
-        DrawPhoto(g, d.Photo, new Rectangle(r.X + 12, r.Y + 40, 96, 125));
+        DrawPhoto(ctx, d.Photo, new Rect(r.X + 12, r.Y + 40, 96, 125));
 
-        float x = r.X + 122, y = r.Y + 38;
-        y = Field(g, "Jméno", d.FullName, x, y);
-        y = Field(g, "Datum narození", d.BirthDate.ToString("dd.MM.yyyy"), x, y);
-        y = Field(g, "Číslo OP", d.IdNumber, x, y);
-        Field(g, "Platnost do roku", d.ValidUntilYear.ToString(), x, y);
+        double x = r.X + 122, y = r.Y + 38;
+        y = Field(ctx, "Jméno", d.FullName, x, y);
+        y = Field(ctx, "Datum narození", d.BirthDate.ToString("dd.MM.yyyy"), x, y);
+        y = Field(ctx, "Číslo OP", d.IdNumber, x, y);
+        Field(ctx, "Platnost do roku", d.ValidUntilYear.ToString(), x, y);
     }
 
-    private void DrawPermit(Graphics g, EntryPermit d, Rectangle r)
+    private void DrawPermit(DrawingContext ctx, EntryPermit d, Rect r)
     {
-        DrawPaper(g, r, Color.FromArgb(226, 238, 220), Color.FromArgb(70, 110, 70));
+        DrawPaper(ctx, r, C(226, 238, 220), C(70, 110, 70));
 
-        using (var header = new SolidBrush(Color.FromArgb(70, 110, 70)))
-            g.FillRectangle(header, r.X, r.Y, r.Width, 28);
-        g.DrawString("POVOLENÍ KE VSTUPU", _bold, Brushes.White, r.X + 10, r.Y + 6);
+        Fill(ctx, C(70, 110, 70), r.X, r.Y, r.Width, 28);
+        Text(ctx, "POVOLENÍ KE VSTUPU", Bold, Brushes.White, r.X + 10, r.Y + 6);
 
-        float x1 = r.X + 16, x2 = r.X + 184, y = r.Y + 40;
-        Field(g, "Jméno", d.FullName, x1, y);
+        double x1 = r.X + 16, x2 = r.X + 184, y = r.Y + 40;
+        Field(ctx, "Jméno", d.FullName, x1, y);
         y += 38;
-        Field(g, "Datum narození", d.BirthDate.ToString("dd.MM.yyyy"), x1, y);
-        Field(g, "Sektor", d.TargetSector.ToString().ToUpperInvariant(), x2, y);
+        Field(ctx, "Datum narození", d.BirthDate.ToString("dd.MM.yyyy"), x1, y);
+        Field(ctx, "Sektor", d.TargetSector.ToString().ToUpperInvariant(), x2, y);
         y += 38;
-        Field(g, "Účel cesty", d.Purpose, x1, y);
-        Field(g, "Číslo povolení", d.PermitNumber, x2, y);
+        Field(ctx, "Účel cesty", d.Purpose, x1, y);
+        Field(ctx, "Číslo povolení", d.PermitNumber, x2, y);
         y += 38;
-        Field(g, "Platnost do roku", d.ValidUntilYear.ToString(), x1, y);
+        Field(ctx, "Platnost do roku", d.ValidUntilYear.ToString(), x1, y);
 
-        DrawStamp(g, d.Stamp, r.Right - 78, r.Bottom - 70);
+        DrawStamp(ctx, d.Stamp, r.Right - 78, r.Bottom - 70);
     }
 
-    private void DrawStamp(Graphics g, StampColor color, float cx, float cy)
+    private void DrawStamp(DrawingContext ctx, StampColor color, double cx, double cy)
     {
         Color c = color switch
         {
-            StampColor.Red => Color.FromArgb(210, 190, 30, 40),
-            StampColor.Green => Color.FromArgb(210, 30, 140, 50),
-            _ => Color.FromArgb(210, 40, 70, 190)
+            StampColor.Red => C(190, 30, 40, 210),
+            StampColor.Green => C(30, 140, 50, 210),
+            _ => C(40, 70, 190, 210)
         };
 
-        var saved = g.Save();
-        g.TranslateTransform(cx, cy);
-        g.RotateTransform(-14f);
-
-        using (var outer = new Pen(c, 4f))
-            g.DrawEllipse(outer, -50, -50, 100, 100);
-        using (var inner = new Pen(c, 2f))
-            g.DrawEllipse(inner, -42, -42, 84, 84);
-        using (var brush = new SolidBrush(c))
+        var matrix = Matrix.CreateRotation(-14 * Math.PI / 180.0) * Matrix.CreateTranslation(cx, cy);
+        using (ctx.PushTransform(matrix))
         {
-            g.DrawString("SCHVÁLENO", _smallBold, brush, new RectangleF(-50, -14, 100, 20), Centered);
-            g.DrawString("* * *", _small, brush, new RectangleF(-50, 8, 100, 18), Centered);
+            var brush = Br(c);
+            ctx.DrawEllipse(null, new Pen(brush, 4), new Point(0, 0), 50, 50);
+            ctx.DrawEllipse(null, new Pen(brush, 2), new Point(0, 0), 42, 42);
+            Text(ctx, "SCHVÁLENO", SmallBold, brush, -50, -14, 100, TextAlignment.Center);
+            Text(ctx, "* * *", Small, brush, -50, 6, 100, TextAlignment.Center);
         }
-
-        g.Restore(saved);
     }
 
-    private void DrawManual(Graphics g, DailyDirective d, Rectangle r)
+    private void DrawManual(DrawingContext ctx, DailyDirective d, Rect r)
     {
-        DrawPaper(g, r, Color.FromArgb(242, 235, 208), Color.FromArgb(120, 100, 60));
+        DrawPaper(ctx, r, C(242, 235, 208), C(120, 100, 60));
 
-        float x = r.X + 18, w = r.Width - 36, y = r.Y + 14;
-        g.DrawString("MANUÁL OBČANA", _h2, Brushes.Black, x, y);
+        double x = r.X + 18, w = r.Width - 36, y = r.Y + 14;
+        Text(ctx, "MANUÁL OBČANA", H2, Brushes.Black, x, y);
         y += 28;
-        g.DrawString($"Denní direktiva  •  Den {d.Day}  •  {d.Date:dd.MM.yyyy}", _small, Brushes.DimGray, x, y);
+        Text(ctx, $"Denní direktiva  •  Den {d.Day}  •  {d.Date:dd.MM.yyyy}", Small, Brushes.DimGray, x, y);
         y += 22;
 
-        using (var sep = new Pen(Color.FromArgb(120, 100, 60), 1.5f))
-            g.DrawLine(sep, x, y, x + w, y);
+        Line(ctx, C(120, 100, 60), 1.5, x, y, x + w, y);
         y += 8;
 
-        y = Paragraph(g, d.Bulletin, _italic, Brushes.SaddleBrown, x, y, w) + 12;
+        y = Paragraph(ctx, d.Bulletin, Italic, Brushes.SaddleBrown, x, y, w) + 12;
 
-        g.DrawString("PRAVIDLA PRO DNEŠNÍ SMĚNU", _bold, Brushes.Black, x, y);
+        Text(ctx, "PRAVIDLA PRO DNEŠNÍ SMĚNU", Bold, Brushes.Black, x, y);
         y += 22;
         foreach (var rule in d.DynamicRules())
-            y = Bullet(g, rule, _bold, Brushes.Firebrick, x, y, w) + 4;
+            y = Bullet(ctx, rule, Bold, Brushes.Firebrick, x, y, w) + 4;
         foreach (var rule in d.StaticRules())
-            y = Bullet(g, rule, _text, Brushes.Black, x, y, w) + 4;
+            y = Bullet(ctx, rule, Txt, Brushes.Black, x, y, w) + 4;
 
         y += 8;
-        g.DrawString("VAROVÁNÍ – ZNÁMÉ PŘÍZNAKY INFEKCE", _bold, Brushes.Black, x, y);
+        Text(ctx, "VAROVÁNÍ – ZNÁMÉ PŘÍZNAKY INFEKCE", Bold, Brushes.Black, x, y);
         y += 22;
         foreach (var sign in d.WarningSigns)
         {
             string text = sign.Czech() + (sign.IsVisible() ? "" : "  (jen při prohlídce)");
-            y = Bullet(g, text, _text, Brushes.Black, x, y, w) + 2;
+            y = Bullet(ctx, text, Txt, Brushes.Black, x, y, w) + 2;
         }
 
-        y = Paragraph(g, "Doklady neodhalí všechno – ne každý nakažený vypadá nemocně.", _small, Brushes.DimGray, x, y + 4, w) + 12;
+        y = Paragraph(ctx, "Doklady neodhalí všechno – ne každý nakažený vypadá nemocně.", Small, Brushes.DimGray, x, y + 4, w) + 12;
 
-        g.DrawString("SAZEBNÍK KREDITŮ", _bold, Brushes.Black, x, y);
+        Text(ctx, "SAZEBNÍK KREDITŮ", Bold, Brushes.Black, x, y);
         y += 22;
 
         string[] tariffs =
@@ -613,128 +560,158 @@ public sealed class GameRenderer : IDisposable
 
         foreach (var line in tariffs)
         {
-            g.DrawString(line, _small, Brushes.Black, x, y);
+            Text(ctx, line, Small, Brushes.Black, x, y);
             y += 17;
         }
     }
 
-    private void DrawInspection(Graphics g, GameEngine e, Rectangle r)
+    private void DrawInspection(DrawingContext ctx, GameEngine e, Rect r)
     {
-        using (var bg = new SolidBrush(Color.FromArgb(30, 34, 42)))
-            g.FillRectangle(bg, r);
-        using (var pen = new Pen(Color.FromArgb(80, 90, 110), 1))
-            g.DrawRectangle(pen, r);
+        Fill(ctx, C(30, 34, 42), r);
+        Frame(ctx, C(80, 90, 110), 1, r);
 
-        g.DrawString("PROHLÍDKA", _bold, Brushes.Gainsboro, r.X + 12, r.Y + 8);
+        Text(ctx, "PROHLÍDKA", Bold, Brushes.Gainsboro, r.X + 12, r.Y + 8);
 
         if (e.InspectionLines == null)
         {
-            g.DrawString($"Zatím neprovedena. Stojí {EconomyManager.InspectionCost} kr. [I]", _small, Brushes.Gray, r.X + 12, r.Y + 34);
+            Text(ctx, $"Zatím neprovedena. Stojí {EconomyManager.InspectionCost} kr. [I]", Small, Brushes.Gray, r.X + 12, r.Y + 34);
             return;
         }
 
-        float y = r.Y + 32;
+        double y = r.Y + 32;
         foreach (var line in e.InspectionLines)
         {
-            g.DrawString(line, _text, Brushes.White, r.X + 12, y);
+            Text(ctx, line, Txt, Brushes.White, r.X + 12, y);
             y += 22;
         }
     }
 
-    private void DrawResultCard(Graphics g, GameEngine e, Rectangle booth)
+    private void DrawResultCard(DrawingContext ctx, GameEngine e, Rect booth)
     {
         var res = e.LastResult!;
 
-        using (var dim = new SolidBrush(Color.FromArgb(175, 0, 0, 0)))
-            g.FillRectangle(dim, booth);
+        Fill(ctx, C(0, 0, 0, 175), booth);
 
-        var card = new RectangleF(booth.X + 10, booth.Y + 60, booth.Width - 20, 520);
-        Color accent = res.WasCorrect ? Color.FromArgb(76, 175, 80) : Color.FromArgb(229, 57, 53);
+        var card = new Rect(booth.X + 10, booth.Y + 60, booth.Width - 20, 520);
+        Color accent = res.WasCorrect ? C(76, 175, 80) : C(229, 57, 53);
+        var accentB = Br(accent);
 
-        using var path = RoundedRect(card, 10);
-        using (var fill = new SolidBrush(Color.FromArgb(244, 26, 29, 36)))
-            g.FillPath(fill, path);
-        using (var pen = new Pen(accent, 3))
-            g.DrawPath(pen, path);
+        ctx.DrawRectangle(Br(C(26, 29, 36, 244)), new Pen(accentB, 3), card, 10, 10);
 
-        using var accentB = new SolidBrush(accent);
-        float x = card.X + 16, w = card.Width - 32, y = card.Y + 14;
+        double x = card.X + 16, w = card.Width - 32, y = card.Y + 14;
 
-        y = Paragraph(g, res.Headline, _h2, accentB, x, y, w) + 6;
-        g.DrawString($"Kredity: {Signed(res.CreditsDelta)}", _big, accentB, x, y);
+        y = Paragraph(ctx, res.Headline, H2, accentB, x, y, w) + 6;
+        Text(ctx, $"Kredity: {Signed(res.CreditsDelta)}", Big, accentB, x, y);
         y += 46;
 
         if (res.WarningIssued)
-        {
-            y = Paragraph(g, $"VAROVÁNÍ {e.Stats.Warnings}/{PlayerStats.MaxWarnings} UDĚLENO", _bold, Brushes.Orange, x, y, w) + 8;
-        }
+            y = Paragraph(ctx, $"VAROVÁNÍ {e.Stats.Warnings}/{PlayerStats.MaxWarnings} UDĚLENO", Bold, Brushes.Orange, x, y, w) + 8;
 
-        y = Paragraph(g, res.Explanation, _text, Brushes.Gainsboro, x, y, w) + 12;
+        y = Paragraph(ctx, res.Explanation, Txt, Brushes.Gainsboro, x, y, w) + 12;
 
-        g.DrawString("ZJIŠTĚNÍ", _bold, Brushes.White, x, y);
+        Text(ctx, "ZJIŠTĚNÍ", Bold, Brushes.White, x, y);
         y += 22;
         foreach (var finding in res.Findings)
-            y = Bullet(g, finding, _text, Brushes.Gainsboro, x, y, w) + 3;
+            y = Bullet(ctx, finding, Txt, Brushes.Gainsboro, x, y, w) + 3;
 
-        g.DrawString("Pokračuj: Enter", _small, Brushes.Gray,
-            new RectangleF(card.X, card.Bottom - 30, card.Width, 20), CenterTop);
+        Text(ctx, "Pokračuj: Enter", Small, Brushes.Gray, card.X, card.Bottom - 30, card.Width, TextAlignment.Center);
     }
 
     // ------------------------------------------------------------------ pomocné funkce
 
-    private void DrawPaper(Graphics g, Rectangle r, Color paper, Color border)
+    private void DrawPaper(DrawingContext ctx, Rect r, Color paper, Color border)
     {
-        using (var shadow = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
-            g.FillRectangle(shadow, r.X + 4, r.Y + 4, r.Width, r.Height);
-        using (var fill = new SolidBrush(paper))
-            g.FillRectangle(fill, r);
-        using (var pen = new Pen(border, 2f))
-            g.DrawRectangle(pen, r);
+        Fill(ctx, C(0, 0, 0, 80), r.X + 4, r.Y + 4, r.Width, r.Height);
+        Fill(ctx, paper, r);
+        Frame(ctx, border, 2, r);
     }
 
-    private float Field(Graphics g, string label, string value, float x, float y)
+    private double Field(DrawingContext ctx, string label, string value, double x, double y)
     {
-        g.DrawString(label.ToUpperInvariant(), _small, Brushes.DimGray, x, y);
-        g.DrawString(value, _mono, Brushes.Black, x, y + 14);
+        Text(ctx, label.ToUpperInvariant(), Small, Brushes.DimGray, x, y);
+        Text(ctx, value, Mono, Brushes.Black, x, y + 14);
         return y + 38;
     }
 
-    private float Row(Graphics g, string label, string value, Brush valueBrush, float x, float y, float w)
+    private double Row(DrawingContext ctx, string label, string value, IBrush valueBrush, double x, double y, double w)
     {
-        g.DrawString(label, _text, Brushes.Gainsboro, x, y);
-        g.DrawString(value, _bold, valueBrush, new RectangleF(x, y, w, 24), RightAlign);
+        Text(ctx, label, Txt, Brushes.Gainsboro, x, y);
+        Text(ctx, value, Bold, valueBrush, x, y, w, TextAlignment.Right);
         return y + 28;
     }
 
-    private float Paragraph(Graphics g, string text, Font font, Brush brush, float x, float y, float width)
+    private double Paragraph(DrawingContext ctx, string text, Fnt font, IBrush brush, double x, double y, double width)
+        => y + Text(ctx, text, font, brush, x, y, width);
+
+    private double Bullet(DrawingContext ctx, string text, Fnt font, IBrush brush, double x, double y, double width)
     {
-        float height = g.MeasureString(text, font, (int)width).Height;
-        g.DrawString(text, font, brush, new RectangleF(x, y, width, height + 2));
-        return y + height;
+        Text(ctx, "•", font, brush, x, y);
+        return Paragraph(ctx, text, font, brush, x + 14, y, width - 14);
     }
 
-    private float Bullet(Graphics g, string text, Font font, Brush brush, float x, float y, float width)
+    /// <summary>Vykreslí text a vrátí jeho výšku. width &gt; 0 zapne zalamování a zarovnání.</summary>
+    private static double Text(DrawingContext ctx, string s, Fnt f, IBrush brush, double x, double y,
+        double width = 0, TextAlignment align = TextAlignment.Left)
     {
-        g.DrawString("•", font, brush, x, y);
-        return Paragraph(g, text, font, brush, x + 14, y, width - 14);
+        var ft = new FormattedText(s, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, f.Face, f.Size, brush);
+        if (width > 0) ft.MaxTextWidth = width;
+        ft.TextAlignment = align;
+        ctx.DrawText(ft, new Point(x, y));
+        return ft.Height;
     }
 
     private static string Signed(int value) => value >= 0 ? $"+{value}" : $"−{-value}";
 
-    private static Color Blend(Color a, Color b, float t) => Color.FromArgb(
-        (int)(a.R + (b.R - a.R) * t),
-        (int)(a.G + (b.G - a.G) * t),
-        (int)(a.B + (b.B - a.B) * t));
+    private static Color C(int r, int g, int b, int a = 255) => Color.FromArgb((byte)a, (byte)r, (byte)g, (byte)b);
 
-    private static GraphicsPath RoundedRect(RectangleF r, float radius)
+    private static IBrush Br(Color c) => new SolidColorBrush(c);
+
+    private static Color Blend(Color a, Color b, double t) => Color.FromRgb(
+        (byte)(a.R + (b.R - a.R) * t),
+        (byte)(a.G + (b.G - a.G) * t),
+        (byte)(a.B + (b.B - a.B) * t));
+
+    private static void Fill(DrawingContext ctx, Color c, Rect r) => ctx.DrawRectangle(Br(c), null, r);
+
+    private static void Fill(DrawingContext ctx, Color c, double x, double y, double w, double h)
+        => ctx.DrawRectangle(Br(c), null, new Rect(x, y, w, h));
+
+    private static void Frame(DrawingContext ctx, Color c, double thickness, Rect r)
+        => ctx.DrawRectangle(null, new Pen(Br(c), thickness), r);
+
+    private static void Line(DrawingContext ctx, Color c, double thickness, double x1, double y1, double x2, double y2)
+        => ctx.DrawLine(new Pen(Br(c), thickness), new Point(x1, y1), new Point(x2, y2));
+
+    private static void Ell(DrawingContext ctx, IBrush? brush, IPen? pen, double x, double y, double w, double h)
+        => ctx.DrawEllipse(brush, pen, new Point(x + w / 2, y + h / 2), w / 2, h / 2);
+
+    private static void Poly(DrawingContext ctx, IBrush? brush, IPen? pen, params Point[] points)
     {
-        float d = radius * 2f;
-        var path = new GraphicsPath();
-        path.AddArc(r.X, r.Y, d, d, 180, 90);
-        path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
+        var geometry = new StreamGeometry();
+        using (var g = geometry.Open())
+        {
+            g.BeginFigure(points[0], true);
+            for (int i = 1; i < points.Length; i++)
+                g.LineTo(points[i]);
+            g.EndFigure(true);
+        }
+
+        ctx.DrawGeometry(brush, pen, geometry);
+    }
+
+    /// <summary>Výseč elipsy (jako GDI+ FillPie): úhly ve stupních, po směru hodinových ručiček.</summary>
+    private static void Pie(DrawingContext ctx, IBrush brush, double x, double y, double w, double h, double startDeg, double sweepDeg)
+    {
+        double cx = x + w / 2, cy = y + h / 2, rx = w / 2, ry = h / 2;
+        var points = new List<Point> { new(cx, cy) };
+
+        const int steps = 24;
+        for (int i = 0; i <= steps; i++)
+        {
+            double a = (startDeg + sweepDeg * i / steps) * Math.PI / 180.0;
+            points.Add(new Point(cx + rx * Math.Cos(a), cy + ry * Math.Sin(a)));
+        }
+
+        Poly(ctx, brush, null, points.ToArray());
     }
 }

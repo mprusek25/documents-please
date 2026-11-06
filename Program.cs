@@ -1,13 +1,13 @@
-using DocumentsPlease.UI;
+using Avalonia;
 
 namespace DocumentsPlease;
 
 internal static class Program
 {
     [STAThread]
-    private static void Main()
-    {
-        ApplicationConfiguration.Initialize();
-        Application.Run(new GameForm());
-    }
+    public static void Main(string[] args) =>
+        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+
+    public static AppBuilder BuildAvaloniaApp() =>
+        AppBuilder.Configure<App>().UsePlatformDetect();
 }
