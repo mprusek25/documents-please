@@ -36,19 +36,19 @@ public sealed class GameRenderer
 
     private static readonly HashSet<ZombieSign> NoSigns = new();
 
-    private static readonly FontFamily UiFamily = FontFamily.Default;
+    private static readonly FontFamily UiFamily   = FontFamily.Default;
     private static readonly FontFamily MonoFamily = new("Menlo, Consolas, Courier New, monospace");
 
-    private static readonly Fnt Title = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 44);
-    private static readonly Fnt Big = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 28);
-    private static readonly Fnt H2 = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 18);
-    private static readonly Fnt Txt = new(new Typeface(UiFamily), 14);
-    private static readonly Fnt Bold = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 14);
-    private static readonly Fnt Italic = new(new Typeface(UiFamily, FontStyle.Italic), 13);
-    private static readonly Fnt Small = new(new Typeface(UiFamily), 12);
+    private static readonly Fnt Title     = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 44);
+    private static readonly Fnt Big       = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 28);
+    private static readonly Fnt H2        = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 18);
+    private static readonly Fnt Txt       = new(new Typeface(UiFamily), 14);
+    private static readonly Fnt Bold      = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 14);
+    private static readonly Fnt Italic    = new(new Typeface(UiFamily, FontStyle.Italic), 13);
+    private static readonly Fnt Small     = new(new Typeface(UiFamily), 12);
     private static readonly Fnt SmallBold = new(new Typeface(UiFamily, FontStyle.Normal, FontWeight.Bold), 11);
-    private static readonly Fnt Tiny = new(new Typeface(UiFamily), 10);
-    private static readonly Fnt Mono = new(new Typeface(MonoFamily, FontStyle.Normal, FontWeight.Bold), 15);
+    private static readonly Fnt Tiny      = new(new Typeface(UiFamily), 10);
+    private static readonly Fnt Mono      = new(new Typeface(MonoFamily, FontStyle.Normal, FontWeight.Bold), 15);
     private static readonly Fnt MonoSmall = new(new Typeface(MonoFamily), 12);
 
     private static readonly Dictionary<string, string> SpacedCache = new();
@@ -56,9 +56,12 @@ public sealed class GameRenderer
     private readonly Geometry _grain;
     private readonly Geometry _scanlines;
 
+    // Čas vstupu do ShowingResult pro animaci fade-in
+    private double _resultEnterTime = -1;
+
     public GameRenderer()
     {
-        _grain = BuildGrain();
+        _grain     = BuildGrain();
         _scanlines = BuildScanlines();
     }
 
@@ -73,6 +76,12 @@ public sealed class GameRenderer
 
         var matrix = Matrix.CreateScale(scale, scale)
                      * Matrix.CreateTranslation((size.Width - W * scale) / 2, (size.Height - H * scale) / 2);
+
+        // Reset result timer když opouštíme ShowingResult
+        if (engine.State != GameState.ShowingResult)
+            _resultEnterTime = -1;
+        else if (_resultEnterTime < 0)
+            _resultEnterTime = time;
 
         using (ctx.PushTransform(matrix))
         using (ctx.PushClip(new Rect(0, 0, W, H)))
@@ -108,19 +117,16 @@ public sealed class GameRenderer
 
     private void DrawMainMenu(DrawingContext ctx, double time)
     {
-        // tmavé pozadí s nádechem zeleně
         VerticalGradient(ctx, new Rect(0, 0, W, H), Rgb(26, 32, 29), Rgb(12, 15, 14));
 
         DrawEmblem(ctx, 600, 78, 30);
 
-        // název – prokládaný, s občasným záblesvem jako vadná zářivka
         double flicker = Math.Sin(time * 17) * Math.Sin(time * 5.3);
         Color titleColor = flicker > 0.93 ? Rgb(150, 44, 38) : Danger;
         TrackedCentered(ctx, "DOCUMENTS, PLEASE", Title, Br(titleColor), 600, 118, 6);
 
         Line(ctx, Rule, 1, 330, 192, 870, 192);
-        TextC(ctx, Spaced("MINISTERSTVO KARANTÉNY · OKÉNKO 3 · ZÓNA 7"),
-            SmallBold, Br(InkDim), 0, 202, W);
+        TextC(ctx, Spaced("MINISTERSTVO KARANTÉNY · OKÉNKO 3 · ZÓNA 7"), SmallBold, Br(InkDim), 0, 202, W);
 
         // levý panel – instrukce
         var left = new Rect(120, 246, 500, 352);
@@ -137,37 +143,33 @@ public sealed class GameRenderer
         };
 
         for (int i = 0; i < steps.Length; i++)
-        {
             y = NumberedStep(ctx, i + 1, steps[i], left.X + 20, y, left.Width - 40) + 12;
-        }
 
         // pravý panel – sazebník
-        var right = new Rect(660, 246, 420, 352);
+        var right = new Rect(640, 246, 440, 352);
         DrawPanel(ctx, right);
         double ry = SectionBar(ctx, "SAZEBNÍK KREDITŮ", right.X + 1, right.Y + 1, right.Width - 2);
         ry += 8;
 
         double rx = right.X + 20, rw = right.Width - 40;
-        ry = Ledger(ctx, "Správné rozhodnutí", EconomyManager.RewardCorrect, null, rx, ry, rw);
-        ry = Ledger(ctx, "Poplach na zombii", EconomyManager.RewardAlarmBonus, null, rx, ry, rw);
-        ry = Ledger(ctx, "Vpuštěná zombie", EconomyManager.PenaltyZombieLetIn, "+ varování", rx, ry, rw);
-        ry = Ledger(ctx, "Přehlédnutá chyba v dokladech", EconomyManager.PenaltyMissedAdminError, null, rx, ry, rw);
-        ry = Ledger(ctx, "Zadržený nevinný", EconomyManager.PenaltyDetainInnocent, null, rx, ry, rw);
-        ry = Ledger(ctx, "Planý poplach", EconomyManager.PenaltyFalseAlarm, null, rx, ry, rw);
-        ry = Ledger(ctx, "Prohlídka návštěvníka", -EconomyManager.InspectionCost, null, rx, ry, rw);
-        ry = Ledger(ctx, "Nájem a živobytí za směnu", -EconomyManager.DailyUpkeep, null, rx, ry, rw);
+        ry = Ledger(ctx, "Správné rozhodnutí",           EconomyManager.RewardCorrect,         null,          rx, ry, rw);
+        ry = Ledger(ctx, "Poplach na zombii (+base)",    EconomyManager.RewardAlarmBonus,       null,          rx, ry, rw);
+        ry = Ledger(ctx, "Vpuštěná zombie",               EconomyManager.PenaltyZombieLetIn,    "+ varování",  rx, ry, rw);
+        ry = Ledger(ctx, "Přehlédnutá chyba v dokladech", EconomyManager.PenaltyMissedAdminError, null,       rx, ry, rw);
+        ry = Ledger(ctx, "Zadržený nevinný",              EconomyManager.PenaltyDetainInnocent, null,          rx, ry, rw);
+        ry = Ledger(ctx, "Planý poplach",                 EconomyManager.PenaltyFalseAlarm,     null,          rx, ry, rw);
+        ry = Ledger(ctx, "Prohlídka návštěvníka",         -EconomyManager.InspectionCost,       null,          rx, ry, rw);
+        ry = Ledger(ctx, "Nájem a živobytí za směnu",     -EconomyManager.DailyUpkeep,          null,          rx, ry, rw);
 
         ry += 6;
         Line(ctx, Rule, 1, rx, ry, rx + rw, ry);
         ry += 10;
-        Text(ctx, "Počáteční zůstatek", Small, Br(InkDim), rx, ry);
+        Text(ctx, "Počáteční zůstatek",          Small, Br(InkDim), rx, ry);
         Text(ctx, $"{EconomyManager.StartingCredits} kr.", Bold, Br(Ink), rx, ry - 2, rw, TextAlignment.Right);
         ry += 22;
         Text(ctx, $"Po {PlayerStats.MaxWarnings} varováních nebo v mínusu končíš.", Tiny, Br(InkFaint), rx, ry);
 
-        // ovládání
-        DrawKeycapRow(ctx, 620);
-
+        DrawKeycapRow(ctx, 622);
         TextC(ctx, "ENTER  –  NASTOUPIT DO SLUŽBY", Bold, Br(Accent), 0, 674, W);
     }
 
@@ -175,21 +177,21 @@ public sealed class GameRenderer
     {
         (string Key, string Label)[] keys =
         {
-            ("1", "PUSTIT"), ("2", "ZADRŽET"), ("3", "POPLACH"), ("I", "PROHLÍDKA"), ("ENTER", "DALŠÍ")
+            ("1", "PUSTIT"), ("2", "ZADRŽET"), ("3", "POPLACH"), ("I", "PROHLÍDKA"), ("ENTER", "POKRAČOVAT")
         };
 
-        const double gap = 26;
-        var caps = new FormattedText[keys.Length];
-        var labels = new FormattedText[keys.Length];
+        const double gap = 22;
+        var caps      = new FormattedText[keys.Length];
+        var labels    = new FormattedText[keys.Length];
         var capWidths = new double[keys.Length];
-        double total = 0;
+        double total  = 0;
 
         for (int i = 0; i < keys.Length; i++)
         {
-            caps[i] = Ft(keys[i].Key, SmallBold, Br(Ink));
-            labels[i] = Ft(keys[i].Label, SmallBold, Br(InkDim));
+            caps[i]      = Ft(keys[i].Key,   SmallBold, Br(Ink));
+            labels[i]    = Ft(keys[i].Label, SmallBold, Br(InkDim));
             capWidths[i] = Math.Max(32, caps[i].Width + 18);
-            total += capWidths[i] + 8 + labels[i].Width + (i < keys.Length - 1 ? gap : 0);
+            total       += capWidths[i] + 8 + labels[i].Width + (i < keys.Length - 1 ? gap : 0);
         }
 
         double x = (W - total) / 2;
@@ -199,7 +201,6 @@ public sealed class GameRenderer
             ctx.DrawRectangle(Br(PanelHi), new Pen(Br(Rule), 1), cap, 3, 3);
             ctx.DrawText(caps[i], new Point(cap.X + (cap.Width - caps[i].Width) / 2,
                 cap.Y + (cap.Height - caps[i].Height) / 2));
-
             ctx.DrawText(labels[i], new Point(x + capWidths[i] + 8, y + (28 - labels[i].Height) / 2));
             x += capWidths[i] + 8 + labels[i].Width + gap;
         }
@@ -211,7 +212,6 @@ public sealed class GameRenderer
         ctx.DrawRectangle(null, new Pen(Br(Accent), 1), badge, 2, 2);
         var nf = Ft(number.ToString(), SmallBold, Br(Accent));
         ctx.DrawText(nf, new Point(badge.X + (badge.Width - nf.Width) / 2, badge.Y + (badge.Height - nf.Height) / 2));
-
         double h = Text(ctx, text, Txt, Br(Ink), x + 34, y, w - 34);
         return y + Math.Max(h, 24);
     }
@@ -222,7 +222,7 @@ public sealed class GameRenderer
         var brush = Br(value >= 0 ? Good : Danger);
         Text(ctx, Signed(value), Bold, brush, x, y - 1, w, TextAlignment.Right);
         if (note != null)
-            Text(ctx, note, Tiny, Br(Warn), x, y + 1, w - 42, TextAlignment.Right);
+            Text(ctx, note, Tiny, Br(Warn), x, y + 1, w - 48, TextAlignment.Right);
         return y + 26;
     }
 
@@ -247,7 +247,7 @@ public sealed class GameRenderer
         DrawHud(ctx, e);
 
         TextC(ctx, Spaced($"SMĚNA {e.Stats.Day}"), SmallBold, Br(InkDim), 0, 68, W);
-        TextC(ctx, "DENNÍ DIREKTIVA", Big, Br(Ink), 0, 84, W);
+        TextC(ctx, "DENNÍ DIREKTIVA", Big, Br(Ink), 0, 86, W);
 
         DrawManual(ctx, e.Directive, new Rect(300, 128, 600, 548));
 
@@ -272,7 +272,7 @@ public sealed class GameRenderer
         DrawManual(ctx, e.Directive, new Rect(746, 66, 442, 642));
 
         if (e.State == GameState.ShowingResult && e.LastResult != null)
-            DrawResultCard(ctx, e, booth);
+            DrawResultCard(ctx, e, booth, time);
     }
 
     private void DrawHud(DrawingContext ctx, GameEngine e)
@@ -286,13 +286,13 @@ public sealed class GameRenderer
         Text(ctx, Spaced("KREDITY"), Tiny, Br(InkFaint), 20, 9);
         Text(ctx, $"{credits} kr.", H2, Br(credits >= 0 ? Good : Danger), 20, 24);
 
-        Line(ctx, Rule, 1, 150, 12, 150, 42);
+        Line(ctx, Rule, 1, 148, 12, 148, 42);
 
         // varování
-        Text(ctx, Spaced("VAROVÁNÍ"), Tiny, Br(InkFaint), 172, 9);
+        Text(ctx, Spaced("VAROVÁNÍ"), Tiny, Br(InkFaint), 170, 9);
         for (int i = 0; i < PlayerStats.MaxWarnings; i++)
         {
-            var slot = new Rect(172 + i * 24, 26, 18, 18);
+            var slot = new Rect(170 + i * 24, 26, 18, 18);
             if (i < e.Stats.Warnings)
                 ctx.DrawRectangle(Br(Danger), new Pen(Br(Rgb(220, 90, 80)), 1), slot, 2, 2);
             else
@@ -302,16 +302,16 @@ public sealed class GameRenderer
         Line(ctx, Rule, 1, 268, 12, 268, 42);
 
         // den
-        Text(ctx, Spaced("SMĚNA"), Tiny, Br(InkFaint), 290, 9);
-        Text(ctx, $"Den {e.Stats.Day}  ·  {e.Directive.Date:dd.MM.yyyy}", H2, Br(Ink), 290, 24);
+        Text(ctx, Spaced("SMĚNA"), Tiny, Br(InkFaint), 288, 9);
+        Text(ctx, $"Den {e.Stats.Day}  ·  {e.Directive.Date:dd.MM.yyyy}", H2, Br(Ink), 288, 24);
 
-        Line(ctx, Rule, 1, 520, 12, 520, 42);
+        Line(ctx, Rule, 1, 518, 12, 518, 42);
 
-        // direktiva ve zkratce – pořád na očích
-        Text(ctx, Spaced("DNES PLATÍ"), Tiny, Br(InkFaint), 542, 9);
+        // direktiva ve zkratce
+        Text(ctx, Spaced("DNES PLATÍ"), Tiny, Br(InkFaint), 538, 9);
         Text(ctx, $"Sektor {e.Directive.AllowedSector.ToString().ToUpperInvariant()}  ·  " +
                   $"razítko {e.Directive.AllowedStamp.Czech()}  ·  platnost od {e.Directive.MinValidityYear}",
-            Bold, Br(Warn), 542, 26);
+            Bold, Br(Warn), 538, 26);
 
         // počítadlo návštěvníků
         Text(ctx, Spaced("NÁVŠTĚVNÍK"), Tiny, Br(InkFaint), W - 240, 9, 220, TextAlignment.Right);
@@ -324,12 +324,10 @@ public sealed class GameRenderer
 
         using (ctx.PushClip(r))
         {
-            // obkladové pruhy na zdi
             for (double x = r.X + 26; x < r.Right; x += 52)
                 Line(ctx, Rgb(255, 255, 255, 12), 1, x, r.Y, x, r.Bottom);
             Line(ctx, Rgb(0, 0, 0, 60), 2, r.X, r.Y + 250, r.Right, r.Y + 250);
 
-            // kužel světla shora
             Poly(ctx, Br(Rgb(255, 240, 200, 14)), null,
                 new Point(r.X + r.Width / 2 - 40, r.Y),
                 new Point(r.X + r.Width / 2 + 40, r.Y),
@@ -339,7 +337,6 @@ public sealed class GameRenderer
             var person = new Rect(r.X + (r.Width - 300) / 2, 250, 300, 400);
             DrawPerson(ctx, person, v.Face, v.ZombieSigns, v.JacketColor, time, true);
 
-            // pult
             var counter = new Rect(r.X, r.Bottom - 74, r.Width, 74);
             VerticalGradient(ctx, counter, Rgb(68, 52, 40), Rgb(44, 33, 26));
             Line(ctx, Rgb(112, 88, 64), 3, counter.X, counter.Y + 1, counter.Right, counter.Y + 1);
@@ -349,7 +346,6 @@ public sealed class GameRenderer
             TextC(ctx, Spaced("OKÉNKO 3"), SmallBold, Br(Rgb(188, 162, 118)), plaque.X, plaque.Y + 7, plaque.Width);
         }
 
-        // rám okénka s nýty
         Frame(ctx, Rgb(72, 80, 76), 3, r);
         foreach (var p in new[]
                  {
@@ -358,22 +354,19 @@ public sealed class GameRenderer
                  })
             ctx.DrawEllipse(Br(Rgb(96, 104, 100)), null, p, 3, 3);
 
-        DrawSpeech(ctx, new Rect(r.X + 18, r.Y + 20, r.Width - 36, 92), v.Greeting);
+        DrawSpeech(ctx, new Rect(r.X + 18, r.Y + 20, r.Width - 36, 94), v.Greeting, v.Nervous);
     }
 
-    private void DrawSpeech(DrawingContext ctx, Rect r, string text)
+    private void DrawSpeech(DrawingContext ctx, Rect r, string text, bool nervous)
     {
         ctx.DrawRectangle(Br(Rgb(16, 20, 19, 232)), new Pen(Br(Rule), 1), r, 2, 2);
-        Fill(ctx, Accent, r.X, r.Y, 3, r.Height);
+        // Nervózní má žlutou lištu, klidný zelenou
+        Fill(ctx, nervous ? Warn : Accent, r.X, r.Y, 3, r.Height);
 
         Text(ctx, Spaced("NÁVŠTĚVNÍK ŘÍKÁ"), Tiny, Br(InkFaint), r.X + 14, r.Y + 9);
-        Text(ctx, "„" + text + "“", Italic, Br(Ink), r.X + 14, r.Y + 26, r.Width - 28);
+        Text(ctx, "„" + text + """, Italic, Br(Ink), r.X + 14, r.Y + 26, r.Width - 28);
     }
 
-    /// <summary>
-    /// Nakreslí postavu v souřadnicích 200x260 škálovaných do rect.
-    /// Příznaky zombie (signs) mění vzhled a animaci – fotka v OP je kreslí s prázdnou množinou.
-    /// </summary>
     private void DrawPerson(DrawingContext ctx, Rect rect, FaceTraits face, ISet<ZombieSign> signs, int jacket, double time, bool animate)
     {
         var matrix = Matrix.CreateScale(rect.Width / 200.0, rect.Height / 260.0)
@@ -405,7 +398,6 @@ public sealed class GameRenderer
             var skinB = Br(skin);
             var hairB = Br(hair);
 
-            // ramena a kabát
             Poly(ctx, Br(coat), null,
                 new Point(16, 260), new Point(32, 206), new Point(74, 186),
                 new Point(126, 186), new Point(168, 206), new Point(184, 260));
@@ -414,17 +406,14 @@ public sealed class GameRenderer
             Poly(ctx, Br(Rgb(206, 206, 198)), null,
                 new Point(88, 184), new Point(112, 184), new Point(100, 210));
 
-            // dlouhé vlasy – za hlavou
             if (face.Hair == HairStyle.Long)
                 Ell(ctx, hairB, null, 42 + dx, 40 + dy, 116, 150);
 
-            // krk, uši, hlava
             Fill(ctx, Blend(skin, Colors.Black, 0.18), 84 + dx * 0.4, 148, 32, 42);
             Ell(ctx, skinB, null, 45 + dx, 96 + dy, 14, 26);
             Ell(ctx, skinB, null, 141 + dx, 96 + dy, 14, 26);
             Ell(ctx, skinB, null, 52 + dx, 38 + dy, 96, 124);
 
-            // vlasy – přední část
             switch (face.Hair)
             {
                 case HairStyle.Short:
@@ -442,7 +431,6 @@ public sealed class GameRenderer
                     break;
             }
 
-            // oči
             bool milky = signs.Contains(ZombieSign.MilkyEyes);
             var whiteB = Br(milky ? Rgb(205, 210, 205) : Rgb(252, 252, 250));
             Ell(ctx, whiteB, null, 72 + dx, 90 + dy, 22, 14);
@@ -470,7 +458,6 @@ public sealed class GameRenderer
                 Ell(ctx, bags, null, 104 + dx, 101 + dy, 26, 9);
             }
 
-            // obočí a nos
             Line(ctx, hair, 3, 70 + dx, 84 + dy, 94 + dx, 82 + dy);
             Line(ctx, hair, 3, 106 + dx, 82 + dy, 130 + dx, 84 + dy);
 
@@ -478,7 +465,6 @@ public sealed class GameRenderer
             Line(ctx, noseColor, 2, 100 + dx, 100 + dy, 96 + dx, 120 + dy);
             Line(ctx, noseColor, 2, 96 + dx, 120 + dy, 104 + dx, 121 + dy);
 
-            // vousy, ústa
             if (face.Beard)
             {
                 Pie(ctx, hairB, 54 + dx, 78 + dy, 92, 88, 0, 180);
@@ -490,7 +476,6 @@ public sealed class GameRenderer
             else
                 Line(ctx, Blend(skin, Colors.Black, 0.55), 2.5, 88 + dx, 135 + dy, 112 + dx, 135 + dy);
 
-            // brýle
             if (face.Glasses)
             {
                 var glassPen = new Pen(Br(Rgb(40, 40, 46)), 2.5);
@@ -499,18 +484,16 @@ public sealed class GameRenderer
                 ctx.DrawLine(glassPen, new Point(98 + dx, 96 + dy), new Point(102 + dx, 96 + dy));
             }
 
-            // jizvy se stehy
             if (signs.Contains(ZombieSign.Scars))
             {
-                var scar = Rgb(150, 40, 40);
+                var scar   = Rgb(150, 40, 40);
                 var stitch = Rgb(40, 20, 20);
 
                 Line(ctx, scar, 3, 62 + dx, 54 + dy, 90 + dx, 116 + dy);
                 for (int i = 0; i < 5; i++)
                 {
                     double t = i / 4.0;
-                    double sx = 62 + 28 * t + dx;
-                    double sy = 54 + 62 * t + dy;
+                    double sx = 62 + 28 * t + dx, sy = 54 + 62 * t + dy;
                     Line(ctx, stitch, 1.5, sx - 4, sy + 3, sx + 4, sy - 3);
                 }
 
@@ -518,17 +501,15 @@ public sealed class GameRenderer
                 for (int i = 0; i < 3; i++)
                 {
                     double t = i / 2.0;
-                    double sx = 124 + 14 * t + dx;
-                    double sy = 112 + 36 * t + dy;
+                    double sx = 124 + 14 * t + dx, sy = 112 + 36 * t + dy;
                     Line(ctx, stitch, 1.5, sx - 4, sy + 2, sx + 4, sy - 2);
                 }
             }
 
-            // slintání
             if (signs.Contains(ZombieSign.Drooling))
             {
-                double len = 14 + (animate ? (Math.Sin(time * 1.5) + 1) * 7 : 0);
-                var drool = Rgb(190, 225, 232, 210);
+                double len  = 14 + (animate ? (Math.Sin(time * 1.5) + 1) * 7 : 0);
+                var drool   = Rgb(190, 225, 232, 210);
                 Line(ctx, drool, 3, 106 + dx, 140 + dy, 108 + dx, 140 + len + dy);
                 Ell(ctx, Br(drool), null, 104 + dx, 138 + len + dy, 8, 8);
             }
@@ -567,16 +548,26 @@ public sealed class GameRenderer
         DrawPaper(ctx, r, PaperPermit, Rgb(82, 118, 80));
         DocHeader(ctx, r, "POVOLENÍ KE VSTUPU", "FORMULÁŘ 14-B", Rgb(56, 92, 60));
 
-        double x1 = r.X + 16, x2 = r.X + 192, cw = 160, y = r.Y + 44;
-        Field(ctx, "Jméno a příjmení", d.FullName, x1, y, 330);
-        y += 40;
-        Field(ctx, "Datum narození", d.BirthDate.ToString("dd.MM.yyyy"), x1, y, cw);
-        Field(ctx, "Cílový sektor", d.TargetSector.ToString().ToUpperInvariant(), x2, y, cw);
-        y += 40;
-        Field(ctx, "Účel cesty", d.Purpose, x1, y, cw);
-        Field(ctx, "Číslo povolení", d.PermitNumber, x2, y, cw);
-        y += 40;
-        Field(ctx, "Platnost do roku", d.ValidUntilYear.ToString(), x1, y, cw);
+        // Levý a pravý sloupec – bezpečná šířka
+        double colW = (r.Width - 48) / 2;   // 2 sloupce s mezerou
+        double x1   = r.X + 16;
+        double x2   = r.X + 16 + colW + 16;
+        double y    = r.Y + 44;
+
+        // Jméno přes celou šířku
+        Field(ctx, "Jméno a příjmení", d.FullName, x1, y, r.Width - 32);
+        y += 44;
+
+        // Dva sloupce
+        Field(ctx, "Datum narození",   d.BirthDate.ToString("dd.MM.yyyy"),              x1, y, colW);
+        Field(ctx, "Cílový sektor",    d.TargetSector.ToString().ToUpperInvariant(),    x2, y, colW);
+        y += 44;
+
+        Field(ctx, "Účel cesty",       d.Purpose,                                        x1, y, colW);
+        Field(ctx, "Číslo povolení",   d.PermitNumber,                                   x2, y, colW);
+        y += 44;
+
+        Field(ctx, "Platnost do roku", d.ValidUntilYear.ToString(),                      x1, y, colW);
 
         DrawStamp(ctx, d.Stamp, r.Right - 76, r.Bottom - 62);
     }
@@ -592,9 +583,9 @@ public sealed class GameRenderer
     {
         Color c = color switch
         {
-            StampColor.Red => Rgb(178, 36, 44, 205),
+            StampColor.Red   => Rgb(178, 36, 44, 205),
             StampColor.Green => Rgb(36, 128, 56, 205),
-            _ => Rgb(44, 72, 178, 205)
+            _                => Rgb(44, 72, 178, 205)
         };
 
         var matrix = Matrix.CreateRotation(-14 * Math.PI / 180.0) * Matrix.CreateTranslation(cx, cy);
@@ -603,9 +594,9 @@ public sealed class GameRenderer
             var brush = Br(c);
             ctx.DrawEllipse(null, new Pen(brush, 3.5), new Point(0, 0), 46, 46);
             ctx.DrawEllipse(null, new Pen(brush, 1.5), new Point(0, 0), 38, 38);
-            TextC(ctx, "SCHVÁLENO", SmallBold, brush, -44, -17, 88);
-            Line(ctx, c, 1, -26, 0, 26, 0);
-            TextC(ctx, "• • •", Small, brush, -46, 4, 92);
+            // Bez prokládání mezerami – text jinak přetéká ven z razítka
+            TextC(ctx, "SCHVÁLENO", SmallBold, brush, -44, -8, 88);
+            Line(ctx, c, 1, -26, 6, 26, 6);
         }
     }
 
@@ -625,7 +616,7 @@ public sealed class GameRenderer
         Line(ctx, Rgb(140, 122, 78), 1.5, x, y, x + w, y);
         y += 10;
 
-        y += Text(ctx, "„" + d.Bulletin + "“", Italic, Br(Rgb(112, 76, 44)), x, y, w);
+        y += Text(ctx, "„" + d.Bulletin + """, Italic, Br(Rgb(112, 76, 44)), x, y, w);
         y += 10;
 
         y = PaperSection(ctx, "PRAVIDLA PRO DNEŠNÍ SMĚNU", x, y, w);
@@ -651,14 +642,14 @@ public sealed class GameRenderer
 
         (string Label, int Value)[] tariffs =
         {
-            ("Správné rozhodnutí", EconomyManager.RewardCorrect),
-            ("Poplach na zombii", EconomyManager.RewardAlarmBonus),
-            ("Vpuštěná zombie", EconomyManager.PenaltyZombieLetIn),
-            ("Přehlédnutá chyba", EconomyManager.PenaltyMissedAdminError),
-            ("Zadržený nevinný", EconomyManager.PenaltyDetainInnocent),
-            ("Planý poplach", EconomyManager.PenaltyFalseAlarm),
-            ("Prohlídka", -EconomyManager.InspectionCost),
-            ("Nájem po směně", -EconomyManager.DailyUpkeep)
+            ("Správné rozhodnutí",     EconomyManager.RewardCorrect),
+            ("Poplach na zombie (+base)", EconomyManager.RewardAlarmBonus),
+            ("Vpuštěná zombie",         EconomyManager.PenaltyZombieLetIn),
+            ("Přehlédnutá chyba",       EconomyManager.PenaltyMissedAdminError),
+            ("Zadržený nevinný",        EconomyManager.PenaltyDetainInnocent),
+            ("Planý poplach",           EconomyManager.PenaltyFalseAlarm),
+            ("Prohlídka",               -EconomyManager.InspectionCost),
+            ("Nájem po směně",          -EconomyManager.DailyUpkeep)
         };
 
         foreach (var (label, value) in tariffs)
@@ -702,47 +693,60 @@ public sealed class GameRenderer
 
     // ------------------------------------------------------------------ výsledek, souhrn, konec
 
-    private void DrawResultCard(DrawingContext ctx, GameEngine e, Rect booth)
+    private void DrawResultCard(DrawingContext ctx, GameEngine e, Rect booth, double time)
     {
         var res = e.LastResult!;
 
-        Fill(ctx, Rgb(0, 0, 0, 190), booth);
+        // Fade-in za 0.3 s
+        double elapsed = time - _resultEnterTime;
+        double alpha   = Math.Min(elapsed / 0.30, 1.0);
+        byte   oa      = (byte)(190 * alpha);
 
-        var card = new Rect(booth.X + 12, booth.Y + 54, booth.Width - 24, 530);
+        Fill(ctx, Rgb(0, 0, 0, oa), booth);
+
+        double cardAlpha = alpha;
         Color accent = res.WasCorrect ? Good : Danger;
 
-        ctx.DrawRectangle(Br(Rgb(22, 27, 25, 248)), new Pen(Br(accent), 2), card, 3, 3);
-        Fill(ctx, accent, card.X, card.Y, card.Width, 4);
+        // Karta výsledku
+        var card = new Rect(booth.X + 12, booth.Y + 54, booth.Width - 24, 528);
 
-        double x = card.X + 18, w = card.Width - 36, y = card.Y + 20;
-
-        Text(ctx, Spaced(res.WasCorrect ? "SPRÁVNĚ" : "CHYBA"), Tiny, Br(accent), x, y);
-        y += 18;
-        y += Text(ctx, res.Headline, H2, Br(Ink), x, y, w);
-        y += 8;
-
-        Text(ctx, Signed(res.CreditsDelta) + " kr.", Big, Br(accent), x, y);
-        y += 44;
-
-        if (res.WarningIssued)
+        using (ctx.PushOpacity(cardAlpha))
         {
-            var warnBox = new Rect(x, y, w, 28);
-            ctx.DrawRectangle(Br(Rgb(70, 36, 12)), new Pen(Br(Warn), 1), warnBox, 2, 2);
-            Text(ctx, Spaced($"VAROVÁNÍ {e.Stats.Warnings} / {PlayerStats.MaxWarnings} UDĚLENO"),
-                SmallBold, Br(Warn), x + 10, y + 8);
-            y += 38;
+            ctx.DrawRectangle(Br(Rgb(22, 27, 25, 248)), new Pen(Br(accent), 2), card, 3, 3);
+            Fill(ctx, accent, card.X, card.Y, card.Width, 4);
+
+            double x = card.X + 18, w = card.Width - 36, y = card.Y + 20;
+
+            Text(ctx, Spaced(res.WasCorrect ? "SPRÁVNĚ" : "CHYBA"), Tiny, Br(accent), x, y);
+            y += 18;
+            y += Text(ctx, res.Headline, H2, Br(Ink), x, y, w);
+            y += 8;
+
+            Text(ctx, Signed(res.CreditsDelta) + " kr.", Big, Br(accent), x, y);
+            y += 46;
+
+            if (res.WarningIssued)
+            {
+                var warnBox = new Rect(x, y, w, 28);
+                ctx.DrawRectangle(Br(Rgb(70, 36, 12)), new Pen(Br(Warn), 1), warnBox, 2, 2);
+                Text(ctx, Spaced($"VAROVÁNÍ {e.Stats.Warnings} / {PlayerStats.MaxWarnings} UDĚLENO"),
+                    SmallBold, Br(Warn), x + 10, y + 8);
+                y += 38;
+            }
+
+            y += Text(ctx, res.Explanation, Txt, Br(InkDim), x, y, w);
+            y += 16;
+
+            y = SectionBar(ctx, "ZJIŠTĚNÍ", x, y, w);
+            y += 4;
+
+            foreach (var finding in res.Findings)
+                y = Bullet(ctx, finding, Small, Ink, x + 4, y, w - 8) + 6;
+
+            // ENTER nápis na konci karty – pevná pozice od bottom karty
+            TextC(ctx, "ENTER  –  DALŠÍ NÁVŠTĚVNÍK", SmallBold, Br(InkFaint),
+                card.X, card.Bottom - 30, card.Width);
         }
-
-        y += Text(ctx, res.Explanation, Txt, Br(InkDim), x, y, w);
-        y += 16;
-
-        y = SectionBar(ctx, "ZJIŠTĚNÍ", x, y, w);
-        y += 4;
-
-        foreach (var finding in res.Findings)
-            y = Bullet(ctx, finding, Small, Ink, x + 4, y, w - 8) + 6;
-
-        TextC(ctx, "ENTER  –  DALŠÍ NÁVŠTĚVNÍK", SmallBold, Br(InkFaint), card.X, card.Bottom - 28, card.Width);
     }
 
     private void DrawShiftSummary(DrawingContext ctx, GameEngine e)
@@ -753,7 +757,7 @@ public sealed class GameRenderer
         var report = e.LastShiftReport;
         if (report == null) return;
 
-        var panel = new Rect(330, 92, 540, 540);
+        var panel = new Rect(330, 92, 540, 560);
         DrawPanel(ctx, panel);
 
         double y = SectionBar(ctx, $"VYÚČTOVÁNÍ SMĚNY  –  DEN {report.Day}", panel.X + 1, panel.Y + 1, panel.Width - 2);
@@ -763,33 +767,44 @@ public sealed class GameRenderer
 
         Text(ctx, Spaced("VÝKON"), Tiny, Br(InkFaint), x, y);
         y += 20;
-        y = Row(ctx, "Obslouženo návštěvníků", report.Processed.ToString(), Br(Ink), x, y, w);
-        y = Row(ctx, "Správných rozhodnutí", report.Correct.ToString(), Br(Good), x, y, w);
-        y = Row(ctx, "Chybných rozhodnutí", report.Wrong.ToString(), Br(report.Wrong > 0 ? Danger : Ink), x, y, w);
+        y = Row(ctx, "Obslouženo návštěvníků",   report.Processed.ToString(), Br(Ink),   x, y, w);
+        y = Row(ctx, "Správných rozhodnutí",      report.Correct.ToString(),   Br(Good),  x, y, w);
+        y = Row(ctx, "Chybných rozhodnutí",       report.Wrong.ToString(),
+            Br(report.Wrong > 0 ? Danger : Ink), x, y, w);
 
         y += 16;
         Text(ctx, Spaced("ÚČETNICTVÍ"), Tiny, Br(InkFaint), x, y);
         y += 20;
-        y = Row(ctx, "Odměny a pokuty", Signed(report.DecisionCredits), Br(report.DecisionCredits >= 0 ? Good : Danger), x, y, w);
-        y = Row(ctx, "Prohlídky", Signed(report.InspectionCredits), Br(InkDim), x, y, w);
-        y = Row(ctx, "Nájem a živobytí", Signed(report.UpkeepCredits), Br(Danger), x, y, w);
+        y = Row(ctx, "Odměny a pokuty",     Signed(report.DecisionCredits),
+            Br(report.DecisionCredits >= 0 ? Good : Danger), x, y, w);
+        y = Row(ctx, "Prohlídky",           Signed(report.InspectionCredits), Br(InkDim),  x, y, w);
+        y = Row(ctx, "Nájem a živobytí",    Signed(report.UpkeepCredits),     Br(Danger),  x, y, w);
 
         y += 10;
         Line(ctx, Rule, 1.5, x, y, x + w, y);
         y += 16;
 
         Text(ctx, "ZŮSTATEK", H2, Br(Ink), x, y);
-        Text(ctx, $"{report.EndingCredits} kr.", Big, Br(report.EndingCredits >= 0 ? Good : Danger), x, y - 6, w, TextAlignment.Right);
+        Text(ctx, $"{report.EndingCredits} kr.", Big,
+            Br(report.EndingCredits >= 0 ? Good : Danger), x, y - 6, w, TextAlignment.Right);
         y += 52;
 
+        // Statistiky přesnosti
+        int accuracy = e.Stats.AccuracyPercent;
+        y = Row(ctx, "Přesnost rozhodnutí",    $"{accuracy} %",
+            Br(accuracy >= 70 ? Good : accuracy >= 50 ? Warn : Danger), x, y, w);
+        y = Row(ctx, "Zastavených zombie",      e.Stats.ZombiesStopped.ToString(), Br(Good),   x, y, w);
+        Row(ctx, "Vpuštěných zombie",           e.Stats.ZombiesLetIn.ToString(),   Br(Danger), x, y, w);
+        y += 32;
+
         if (report.GameOver)
-            Text(ctx, e.GameOverReason, Bold, Br(Danger), x, y, w);
+            Text(ctx, e.GameOverReason, Bold, Br(Danger), x, y - 32, w);
         else
             Text(ctx, "Zítra tě čeká nová směna a nová direktiva. Pravidla se mění každý den.",
-                Txt, Br(InkDim), x, y, w);
+                Txt, Br(InkDim), x, y - 32, w);
 
         TextC(ctx, report.GameOver ? "ENTER  –  ZOBRAZIT VÝSLEDEK" : "ENTER  –  DALŠÍ SMĚNA",
-            Bold, Br(Accent), 0, 664, W);
+            Bold, Br(Accent), 0, 668, W);
     }
 
     private void DrawGameOver(DrawingContext ctx, GameEngine e)
@@ -799,7 +814,7 @@ public sealed class GameRenderer
         TrackedCentered(ctx, "KONEC HRY", Title, Br(Danger), 600, 96, 8);
         Line(ctx, Rgb(90, 40, 36), 1, 380, 168, 820, 168);
 
-        var panel = new Rect(340, 200, 520, 380);
+        var panel = new Rect(320, 196, 560, 420);
         DrawPanel(ctx, panel);
         double y = SectionBar(ctx, "ZÁVĚREČNÁ ZPRÁVA", panel.X + 1, panel.Y + 1, panel.Width - 2);
         y += 18;
@@ -808,14 +823,35 @@ public sealed class GameRenderer
         y += Text(ctx, e.GameOverReason, Txt, Br(Ink), x, y, w);
         y += 24;
 
-        int shifts = Math.Max(0, e.Stats.Day - (e.LastShiftReport is { GameOver: true } ? 0 : 1));
-        y = Row(ctx, "Odsloužených směn", shifts.ToString(), Br(Ink), x, y, w);
-        y = Row(ctx, "Správných rozhodnutí", e.Stats.TotalCorrect.ToString(), Br(Good), x, y, w);
-        y = Row(ctx, "Chybných rozhodnutí", e.Stats.TotalWrong.ToString(), Br(Danger), x, y, w);
-        y = Row(ctx, "Zastavených zombie", e.Stats.ZombiesStopped.ToString(), Br(Good), x, y, w);
-        Row(ctx, "Vpuštěných zombie", e.Stats.ZombiesLetIn.ToString(), Br(Danger), x, y, w);
+        // Počet odselaných směn
+        int shifts = e.Stats.Day - 1;
+        if (shifts < 0) shifts = 0;
 
-        TextC(ctx, "ENTER  –  NOVÁ HRA", Bold, Br(Accent), 0, 626, W);
+        y = Row(ctx, "Odsloužených směn",     shifts.ToString(),              Br(Ink),   x, y, w);
+        y = Row(ctx, "Správných rozhodnutí",   e.Stats.TotalCorrect.ToString(), Br(Good),  x, y, w);
+        y = Row(ctx, "Chybných rozhodnutí",    e.Stats.TotalWrong.ToString(),   Br(Danger), x, y, w);
+
+        int accuracy = e.Stats.AccuracyPercent;
+        y = Row(ctx, "Přesnost",               $"{accuracy} %",
+            Br(accuracy >= 70 ? Good : accuracy >= 50 ? Warn : Danger), x, y, w);
+
+        y = Row(ctx, "Zastavených zombie",      e.Stats.ZombiesStopped.ToString(), Br(Good),   x, y, w);
+        y = Row(ctx, "Vpuštěných zombie",       e.Stats.ZombiesLetIn.ToString(),   Br(Danger), x, y, w);
+
+        y += 12;
+
+        // Hodnocení
+        string rating = accuracy switch
+        {
+            >= 90 => "EXCELENTNÍ INSPEKTOR",
+            >= 75 => "DOBRÝ STRÁŽCE",
+            >= 60 => "PRŮMĚRNÝ ÚŘEDNÍK",
+            >= 40 => "NEDBALÝ ZAMĚSTNANEC",
+            _     => "NEKOMPETENTNÍ OSOBA"
+        };
+        TextC(ctx, Spaced(rating), SmallBold, Br(accuracy >= 75 ? Good : accuracy >= 50 ? Warn : Danger), 0, y, W);
+
+        TextC(ctx, "ENTER  –  NOVÁ HRA", Bold, Br(Accent), 0, 646, W);
     }
 
     // ------------------------------------------------------------------ stavební prvky
@@ -883,31 +919,23 @@ public sealed class GameRenderer
         SideFade(ctx, new Rect(W - 90, 0, 90, H), 1, 0);
     }
 
-    private void EdgeFade(DrawingContext ctx, Rect r, double from, double to)
+    private static void EdgeFade(DrawingContext ctx, Rect r, double from, double to)
     {
         ctx.DrawRectangle(new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, from, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0, to, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(Rgb(0, 0, 0, 72), 0),
-                new GradientStop(Rgb(0, 0, 0, 0), 1)
-            }
+            EndPoint   = new RelativePoint(0, to,   RelativeUnit.Relative),
+            GradientStops = { new GradientStop(Rgb(0, 0, 0, 72), 0), new GradientStop(Rgb(0, 0, 0, 0), 1) }
         }, null, r);
     }
 
-    private void SideFade(DrawingContext ctx, Rect r, double from, double to)
+    private static void SideFade(DrawingContext ctx, Rect r, double from, double to)
     {
         ctx.DrawRectangle(new LinearGradientBrush
         {
             StartPoint = new RelativePoint(from, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(to, 0, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(Rgb(0, 0, 0, 64), 0),
-                new GradientStop(Rgb(0, 0, 0, 0), 1)
-            }
+            EndPoint   = new RelativePoint(to,   0, RelativeUnit.Relative),
+            GradientStops = { new GradientStop(Rgb(0, 0, 0, 64), 0), new GradientStop(Rgb(0, 0, 0, 0), 1) }
         }, null, r);
     }
 
@@ -919,8 +947,7 @@ public sealed class GameRenderer
         {
             for (int i = 0; i < 900; i++)
             {
-                double x = rng.NextDouble() * W;
-                double y = rng.NextDouble() * H;
+                double x = rng.NextDouble() * W, y = rng.NextDouble() * H;
                 double s = rng.NextDouble() < 0.25 ? 2 : 1;
                 g.BeginFigure(new Point(x, y), true);
                 g.LineTo(new Point(x + s, y));
@@ -929,7 +956,6 @@ public sealed class GameRenderer
                 g.EndFigure(true);
             }
         }
-
         return geometry;
     }
 
@@ -947,7 +973,6 @@ public sealed class GameRenderer
                 g.EndFigure(true);
             }
         }
-
         return geometry;
     }
 
@@ -956,7 +981,6 @@ public sealed class GameRenderer
     private static FormattedText Ft(string s, Fnt f, IBrush brush) =>
         new(s, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, f.Face, f.Size, brush);
 
-    /// <summary>Vykreslí text a vrátí jeho výšku. width &gt; 0 zapne zalamování a zarovnání.</summary>
     private static double Text(DrawingContext ctx, string s, Fnt f, IBrush brush, double x, double y,
         double width = 0, TextAlignment align = TextAlignment.Left)
     {
@@ -970,18 +994,15 @@ public sealed class GameRenderer
     private static double TextC(DrawingContext ctx, string s, Fnt f, IBrush brush, double x, double y, double width)
         => Text(ctx, s, f, brush, x, y, width, TextAlignment.Center);
 
-    /// <summary>Vykreslí text znak po znaku s prokládáním, vycentrovaný na cx.</summary>
     private static void TrackedCentered(DrawingContext ctx, string s, Fnt f, IBrush brush, double cx, double y, double spacing)
     {
         var glyphs = new FormattedText[s.Length];
         double total = 0;
-
         for (int i = 0; i < s.Length; i++)
         {
             glyphs[i] = Ft(s[i].ToString(), f, brush);
             total += glyphs[i].Width + (i < s.Length - 1 ? spacing : 0);
         }
-
         double x = cx - total / 2;
         foreach (var glyph in glyphs)
         {
@@ -990,20 +1011,17 @@ public sealed class GameRenderer
         }
     }
 
-    /// <summary>Levné prokládání pro krátké popisky: "SAZEBNÍK" -> "S A Z E B N Í K".</summary>
     private static string Spaced(string s)
     {
         if (SpacedCache.TryGetValue(s, out var cached)) return cached;
-
         var sb = new StringBuilder(s.Length * 2);
         foreach (char ch in s)
         {
             if (sb.Length > 0) sb.Append(' ');
             sb.Append(ch);
         }
-
         string result = sb.ToString();
-        if (SpacedCache.Count < 256) SpacedCache[s] = result;
+        if (SpacedCache.Count < 512) SpacedCache[s] = result;
         return result;
     }
 
@@ -1017,10 +1035,10 @@ public sealed class GameRenderer
         (byte)(a.B + (b.B - a.B) * t));
 
     private static Color Lighten(Color c, double t) => Blend(c, Colors.White, t);
+    private static Color Darken(Color c, double t)  => Blend(c, Colors.Black, t);
 
-    private static Color Darken(Color c, double t) => Blend(c, Colors.Black, t);
-
-    private static void Fill(DrawingContext ctx, Color c, Rect r) => ctx.DrawRectangle(Br(c), null, r);
+    private static void Fill(DrawingContext ctx, Color c, Rect r)
+        => ctx.DrawRectangle(Br(c), null, r);
 
     private static void Fill(DrawingContext ctx, Color c, double x, double y, double w, double h)
         => ctx.DrawRectangle(Br(c), null, new Rect(x, y, w, h));
@@ -1038,13 +1056,9 @@ public sealed class GameRenderer
     {
         ctx.DrawRectangle(new LinearGradientBrush
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-            GradientStops =
-            {
-                new GradientStop(top, 0),
-                new GradientStop(bottom, 1)
-            }
+            StartPoint     = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint       = new RelativePoint(0, 1, RelativeUnit.Relative),
+            GradientStops  = { new GradientStop(top, 0), new GradientStop(bottom, 1) }
         }, null, r);
     }
 
@@ -1058,23 +1072,19 @@ public sealed class GameRenderer
                 g.LineTo(points[i]);
             g.EndFigure(true);
         }
-
         ctx.DrawGeometry(brush, pen, geometry);
     }
 
-    /// <summary>Výseč elipsy (jako GDI+ FillPie): úhly ve stupních, po směru hodinových ručiček.</summary>
     private static void Pie(DrawingContext ctx, IBrush brush, double x, double y, double w, double h, double startDeg, double sweepDeg)
     {
         double cx = x + w / 2, cy = y + h / 2, rx = w / 2, ry = h / 2;
         var points = new List<Point> { new(cx, cy) };
-
         const int steps = 24;
         for (int i = 0; i <= steps; i++)
         {
             double a = (startDeg + sweepDeg * i / steps) * Math.PI / 180.0;
             points.Add(new Point(cx + rx * Math.Cos(a), cy + ry * Math.Sin(a)));
         }
-
         Poly(ctx, brush, null, points.ToArray());
     }
 }

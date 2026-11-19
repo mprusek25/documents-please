@@ -15,4 +15,14 @@ public sealed class PlayerStats
 
     /// <summary>Příliš mnoho vpuštěných zombie = konec hry.</summary>
     public bool IsInfected => Warnings >= MaxWarnings;
+
+    /// <summary>Přesnost rozhodnutí v procentech (0–100).</summary>
+    public int AccuracyPercent
+    {
+        get
+        {
+            int total = TotalCorrect + TotalWrong;
+            return total == 0 ? 100 : (int)Math.Round(100.0 * TotalCorrect / total);
+        }
+    }
 }

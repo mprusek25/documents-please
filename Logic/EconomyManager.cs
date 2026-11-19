@@ -5,7 +5,7 @@ namespace DocumentsPlease.Logic;
 /// <summary>Herní ekonomika: odměny, pokuty, poplatky a vyhodnocení rozhodnutí.</summary>
 public sealed class EconomyManager
 {
-    public const int StartingCredits = 50;
+    public const int StartingCredits = 60;
     public const int RewardCorrect = 10;
     public const int RewardAlarmBonus = 15;
     public const int PenaltyZombieLetIn = -50;
@@ -31,9 +31,16 @@ public sealed class EconomyManager
 
         if (visitor.Type == VisitorType.HiddenZombie)
         {
-            findings.AddRange(visitor.ZombieSigns.Select(s => "Příznak: " + s.Czech()));
+            // Vždy ukáže příznaky zombie
+            foreach (var sign in visitor.ZombieSigns.Where(s => s.IsVisible()))
+                findings.Add("Příznak: " + sign.Czech());
+
+            // Případně i chyby v dokladech
             if (report.Discrepancies.Count > 0)
                 findings.AddRange(report.Discrepancies.Select(d => "Doklady: " + d.Description));
+
+            if (findings.Count == 0)
+                findings.Add("Žádné viditelné příznaky. Doklady v pořádku.");
 
             if (decision == Decision.Allow)
             {
@@ -46,13 +53,13 @@ public sealed class EconomyManager
             }
             else if (decision == Decision.Alarm)
             {
-                delta = RewardAlarmBonus;
+                delta = RewardCorrect + RewardAlarmBonus;
                 correct = true;
                 headline = "Výborně – poplach!";
-                explanation = "Zombie byla zneškodněna. Za pohotovost dostáváš bonus.";
+                explanation = "Zombie byla zneškodněna záchranným týmem. Za pohotovost dostáváš bonus.";
                 _stats.ZombiesStopped++;
             }
-            else
+            else // Detain
             {
                 delta = RewardCorrect;
                 correct = true;
@@ -76,9 +83,9 @@ public sealed class EconomyManager
                 delta = RewardCorrect;
                 correct = true;
                 headline = "Zadrženo – správně.";
-                explanation = "Doklady obsahovaly chybu. Podvodník je zadržen.";
+                explanation = "Doklady obsahovaly chybu. Podvodník byl zadržen.";
             }
-            else
+            else // Alarm
             {
                 delta = PenaltyFalseAlarm;
                 headline = "Planý poplach.";
@@ -94,15 +101,15 @@ public sealed class EconomyManager
                 delta = RewardCorrect;
                 correct = true;
                 headline = "Vpuštěn – správně.";
-                explanation = "Čistý člověk s platnými doklady.";
+                explanation = "Čistý člověk s platnými doklady. Správné rozhodnutí.";
             }
             else if (decision == Decision.Detain)
             {
                 delta = PenaltyDetainInnocent;
                 headline = "Byrokratická šikana!";
-                explanation = "Zadržel jsi nevinného člověka. Dostáváš pokutu.";
+                explanation = "Zadržel jsi nevinného člověka. Dostáváš pokutu za šikanování civilistů.";
             }
-            else
+            else // Alarm
             {
                 delta = PenaltyFalseAlarm;
                 headline = "Planý poplach!";
@@ -116,7 +123,7 @@ public sealed class EconomyManager
         return new DecisionResult(decision, visitor.Type, correct, delta, warning, headline, explanation, findings);
     }
 
-    /// <summary>Strhne poplatek za detailní prohlídku.</summary>
+    /// <summary>Strhne poplatek za detailní prohlídku. Vrací skutečně stržená kredity.</summary>
     public int ChargeInspection()
     {
         _stats.Credits -= InspectionCost;

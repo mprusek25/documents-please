@@ -6,15 +6,31 @@ namespace DocumentsPlease.Logic;
 public sealed class VisitorGenerator
 {
     private static readonly string[] MaleFirst =
-        { "Jan", "Petr", "Martin", "Tomáš", "Jakub", "Lukáš", "Pavel", "Ondřej", "Michal", "David", "Marek", "Karel" };
+        { "Jan", "Petr", "Martin", "Tomáš", "Jakub", "Lukáš", "Pavel", "Ondřej", "Michal", "David", "Marek", "Karel", "Zdeněk", "Radek", "Václav" };
     private static readonly string[] FemaleFirst =
-        { "Jana", "Eva", "Lucie", "Tereza", "Hana", "Petra", "Kateřina", "Lenka", "Markéta", "Veronika", "Zuzana", "Alena" };
+        { "Jana", "Eva", "Lucie", "Tereza", "Hana", "Petra", "Kateřina", "Lenka", "Markéta", "Veronika", "Zuzana", "Alena", "Monika", "Renata", "Ivana" };
     private static readonly string[] MaleLast =
-        { "Novák", "Svoboda", "Dvořák", "Černý", "Procházka", "Kučera", "Veselý", "Horák", "Němec", "Pospíšil", "Hájek", "Král", "Jelínek", "Růžička", "Beneš" };
+        { "Novák", "Svoboda", "Dvořák", "Černý", "Procházka", "Kučera", "Veselý", "Horák", "Němec", "Pospíšil", "Hájek", "Král", "Jelínek", "Růžička", "Beneš", "Vlček", "Čermák", "Kratochvíl", "Mašek", "Pokorný" };
     private static readonly string[] FemaleLast =
-        { "Nováková", "Svobodová", "Dvořáková", "Černá", "Procházková", "Kučerová", "Veselá", "Horáková", "Němcová", "Pospíšilová", "Hájková", "Králová", "Jelínková", "Růžičková", "Benešová" };
+        { "Nováková", "Svobodová", "Dvořáková", "Černá", "Procházková", "Kučerová", "Veselá", "Horáková", "Němcová", "Pospíšilová", "Hájková", "Králová", "Jelínková", "Růžičková", "Benešová", "Vlčková", "Čermáková", "Kratochvílová", "Mašková", "Pokorná" };
     private static readonly string[] Purposes =
-        { "Práce", "Návštěva rodiny", "Obchodní jednání", "Léčení", "Studium", "Stěhování" };
+        { "Práce", "Návštěva rodiny", "Obchodní jednání", "Léčení", "Studium", "Stěhování", "Resupply", "Tranzit", "Záchranná mise", "Správní záležitost" };
+
+    private static readonly string[] NervousGreetings =
+    {
+        "Ehm... dobrý den. {0}, jen na chvilku. Doklady mám v pořádku, slibuju!",
+        "D-dobrý den. Přišel jsem kvůli: {0}. Je... je to tady?",
+        "Dobrý den! Tohle je správné okénko? Mám všechno... myslím.",
+        "Promiňte, čekal jsem dlouho, jsem trochu nervózní. {0}.",
+    };
+
+    private static readonly string[] CalmGreetings =
+    {
+        "Dobrý den. Přicházím kvůli: {0}.",
+        "Dobré ráno. {0}, prosím o rychlé odbavení.",
+        "Zdravím. Moje doklady jsou v pořádku. {0}.",
+        "Dobrý den. Vše potřebné mám připravené.",
+    };
 
     private readonly Random _rng;
     private int _nextId = 1;
@@ -28,8 +44,9 @@ public sealed class VisitorGenerator
 
     private VisitorType RollType(int day)
     {
-        double zombieChance = Math.Min(0.18 + 0.02 * day, 0.35);
-        const double fraudChance = 0.27;
+        // Zombie šance roste pomaleji, maximálně 30%
+        double zombieChance = Math.Min(0.15 + 0.015 * (day - 1), 0.30);
+        const double fraudChance = 0.28;
         double roll = _rng.NextDouble();
 
         if (roll < zombieChance) return VisitorType.HiddenZombie;
@@ -65,17 +82,18 @@ public sealed class VisitorGenerator
         switch (type)
         {
             case VisitorType.AdministrativeFraudster:
-                int errorCount = _rng.Next(100) < 25 ? 2 : 1;
+                int errorCount = _rng.Next(100) < 30 ? 2 : 1;
                 foreach (var err in Shuffle(Enum.GetValues<DocumentError>()).Take(errorCount))
                     ApplyError(err, draft, d, name);
-                nervous = _rng.Next(100) < 70;
+                nervous = _rng.Next(100) < 65;
                 break;
 
             case VisitorType.HiddenZombie:
                 signs = RollZombieSigns(d);
-                if (_rng.Next(100) < 15)
+                // 10% šance, že zombie má i chybu v dokladech (dvojitá past)
+                if (_rng.Next(100) < 10)
                     ApplyError(Shuffle(Enum.GetValues<DocumentError>()).First(), draft, d, name);
-                nervous = _rng.Next(100) < 10;
+                nervous = _rng.Next(100) < 15;
                 break;
 
             default:
@@ -159,7 +177,7 @@ public sealed class VisitorGenerator
                 draft.Photo = draft.Photo with
                 {
                     HairColor = (draft.Photo.HairColor + 1 + _rng.Next(FaceTraits.HairColorCount - 1)) % FaceTraits.HairColorCount,
-                    Glasses = _rng.Next(2) == 0 ? !draft.Photo.Glasses : draft.Photo.Glasses
+                    Glasses = !draft.Photo.Glasses
                 };
                 break;
         }
@@ -209,18 +227,24 @@ public sealed class VisitorGenerator
             Beard: !female && _rng.Next(100) < 35);
     }
 
-    private static string BuildGreeting(string purpose, HashSet<ZombieSign> signs, bool nervous)
+    private string BuildGreeting(string purpose, HashSet<ZombieSign> signs, bool nervous)
     {
         string p = purpose.ToLowerInvariant();
 
         if (signs.Contains(ZombieSign.Groaning))
             return $"D-dooobrý... deeen... Jdu... za účelem... {p}... mmmrrr...";
+
         if (nervous)
-            return $"Ehm... dobrý den. {purpose}, jen na chvilku. Doklady mám v pořádku, slibuju!";
-        return $"Dobrý den. Přicházím kvůli účelu: {p}.";
+        {
+            string template = NervousGreetings[_rng.Next(NervousGreetings.Length)];
+            return string.Format(template, purpose);
+        }
+
+        string calmTemplate = CalmGreetings[_rng.Next(CalmGreetings.Length)];
+        return string.Format(calmTemplate, purpose);
     }
 
-    private int ValidYear(DailyDirective d) => d.MinValidityYear + _rng.Next(0, 5);
+    private int ValidYear(DailyDirective d) => d.MinValidityYear + _rng.Next(0, 6);
 
     private string Pick(string[] items) => items[_rng.Next(items.Length)];
 

@@ -79,7 +79,7 @@ public sealed class GameEngine
     {
         _rng = new Random();
         _visitors = new VisitorGenerator(_rng);
-        Stats = new PlayerStats { Credits = EconomyManager.StartingCredits };
+        Stats = new PlayerStats { Credits = EconomyManager.StartingCredits, Day = 1 };
         Economy = new EconomyManager(Stats);
         GameOverReason = "";
         LastShiftReport = null;
@@ -101,7 +101,8 @@ public sealed class GameEngine
     {
         if (State != GameState.Inspecting || CurrentVisitor == null || InspectionLines != null) return;
 
-        _shiftInspectionCredits -= Economy.ChargeInspection();
+        int cost = Economy.ChargeInspection();
+        _shiftInspectionCredits -= cost;
         InspectionLines = CurrentVisitor.Inspect();
         Changed?.Invoke();
     }
@@ -123,12 +124,17 @@ public sealed class GameEngine
 
     private void AfterResult()
     {
+        // Kontrola konce hry po každém rozhodnutí
         if (Stats.IsInfected)
         {
             GameOverReason = "Vpustil jsi příliš mnoho zombie. Infekce se rozšířila a stanoviště padlo.";
-            State = GameState.GameOver;
+            BuildFinalShiftReport(gameOver: true);
+            State = GameState.ShiftSummary;
+            Changed?.Invoke();
+            return;
         }
-        else if (VisitorsProcessed >= VisitorsTotal)
+
+        if (VisitorsProcessed >= VisitorsTotal)
         {
             EndShift();
         }
@@ -146,14 +152,20 @@ public sealed class GameEngine
         int upkeep = Economy.ChargeUpkeep();
         bool broke = Stats.Credits < 0;
 
-        LastShiftReport = new ShiftReport(
-            Stats.Day, VisitorsProcessed, _shiftCorrect, _shiftWrong,
-            _shiftDecisionCredits, _shiftInspectionCredits, -upkeep, Stats.Credits, broke);
-
         if (broke)
             GameOverReason = "Nemáš na nájem ani jídlo. Úřad ti ruší akreditaci a vyhazuje tě ze stanoviště.";
 
+        BuildFinalShiftReport(gameOver: broke);
         State = GameState.ShiftSummary;
+    }
+
+    private void BuildFinalShiftReport(bool gameOver)
+    {
+        LastShiftReport = new ShiftReport(
+            Stats.Day, VisitorsProcessed, _shiftCorrect, _shiftWrong,
+            _shiftDecisionCredits, _shiftInspectionCredits,
+            gameOver && Stats.IsInfected ? 0 : -EconomyManager.DailyUpkeep,
+            Stats.Credits, gameOver);
     }
 
     private void AfterSummary()

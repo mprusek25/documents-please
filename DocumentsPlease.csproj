@@ -9,11 +9,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>DocumentsPlease</RootNamespace>
     <AssemblyName>DocumentsPlease</AssemblyName>
+    <!-- Release metadata -->
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>Documents, Please</Product>
+    <Authors>Dax</Authors>
+    <Description>Documents, Please – zombie horrorová karanténní inspekce</Description>
+    <!-- Potlačí varování o zranitelnosti Tmds.DBus (linuxová dep Avalonie, na macOS neběží) -->
+    <NoWarn>NU1903</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.2.1" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.2.1" />
+    <PackageReference Include="Avalonia"               Version="11.2.1" />
+    <PackageReference Include="Avalonia.Desktop"       Version="11.2.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.1" />
   </ItemGroup>
 

@@ -13,7 +13,12 @@ public static class DirectiveGenerator
         "Velitelství: šetřete kredity, prohlídky nejsou zadarmo.",
         "Upozornění: včerejší směna zadržela dva podezřelé. Nepolevujte.",
         "Za zdí se ozývá divný hluk. Nic neřešte, kontrolujte doklady.",
-        "Karanténní správa připomíná: zombie nemají přednost, ani když mají razítko."
+        "Karanténní správa připomíná: zombie nemají přednost, ani když mají razítko.",
+        "Bezpečnostní zpravodaj: nová mutace způsobuje abnormálně klidné chování.",
+        "Pozor: hlášen výskyt padělaných povolení ze sektoru Delta.",
+        "Dnes je zvýšená pohotovost. Zadržujte bez milosti.",
+        "Zpráva z fronty: infikovaní se naučili skrývat příznaky. Prohlídka je nutná.",
+        "Správa zóny oznamuje: kdo vpustí zombie, nese osobní odpovědnost."
     };
 
     public static DailyDirective Generate(int day, Random rng)
@@ -21,12 +26,13 @@ public static class DirectiveGenerator
         var date = new DateOnly(BaseYear, 11, 1).AddDays(day - 1);
         var sector = (Sector)rng.Next(Enum.GetValues<Sector>().Length);
         var stamp = (StampColor)rng.Next(Enum.GetValues<StampColor>().Length);
-        int minYear = BaseYear + (day - 1) / 3 + rng.Next(0, 2);
+        // Minimum platnosti mírně roste s dny, ale ne příliš agresivně
+        int minYear = BaseYear + (day - 1) / 4;
 
         var visible = Enum.GetValues<ZombieSign>().Where(s => s.IsVisible()).OrderBy(_ => rng.Next()).ToList();
         var hidden = Enum.GetValues<ZombieSign>().Where(s => !s.IsVisible()).OrderBy(_ => rng.Next()).ToList();
 
-        // První dva dny jen viditelné příznaky, pak přibude i skrytý (odhalitelný jen prohlídkou).
+        // První dva dny jen viditelné příznaky, pak přibyde i skrytý (odhalitelný jen prohlídkou).
         var warnings = new List<ZombieSign> { visible[0], visible[1] };
         if (day >= 3) warnings.Add(hidden[0]);
 
