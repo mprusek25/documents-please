@@ -364,7 +364,7 @@ public sealed class GameRenderer
         Fill(ctx, nervous ? Warn : Accent, r.X, r.Y, 3, r.Height);
 
         Text(ctx, Spaced("NÁVŠTĚVNÍK ŘÍKÁ"), Tiny, Br(InkFaint), r.X + 14, r.Y + 9);
-        Text(ctx, "„" + text + """, Italic, Br(Ink), r.X + 14, r.Y + 26, r.Width - 28);
+        Text(ctx, "\u201E" + text + "\u201C", Italic, Br(Ink), r.X + 14, r.Y + 26, r.Width - 28);
     }
 
     private void DrawPerson(DrawingContext ctx, Rect rect, FaceTraits face, ISet<ZombieSign> signs, int jacket, double time, bool animate)
@@ -616,7 +616,7 @@ public sealed class GameRenderer
         Line(ctx, Rgb(140, 122, 78), 1.5, x, y, x + w, y);
         y += 10;
 
-        y += Text(ctx, "„" + d.Bulletin + """, Italic, Br(Rgb(112, 76, 44)), x, y, w);
+        y += Text(ctx, "\u201E" + d.Bulletin + "\u201C", Italic, Br(Rgb(112, 76, 44)), x, y, w);
         y += 10;
 
         y = PaperSection(ctx, "PRAVIDLA PRO DNEŠNÍ SMĚNU", x, y, w);
